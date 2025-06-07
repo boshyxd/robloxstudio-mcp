@@ -1,10 +1,11 @@
 import { StudioHttpClient } from './studio-client.js';
+import { BridgeService } from '../bridge-service.js';
 
 export class RobloxStudioTools {
   private client: StudioHttpClient;
 
-  constructor() {
-    this.client = new StudioHttpClient('http://localhost:3002');
+  constructor(bridge: BridgeService) {
+    this.client = new StudioHttpClient(bridge);
   }
 
   // File System Tools

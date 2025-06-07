@@ -1,29 +1,20 @@
-export class StudioHttpClient {
-  private baseUrl: string;
+import { BridgeService } from '../bridge-service.js';
 
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
+export class StudioHttpClient {
+  private bridge: BridgeService;
+
+  constructor(bridge: BridgeService) {
+    this.bridge = bridge;
   }
 
   async request(endpoint: string, data: any): Promise<any> {
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return await response.json();
+      const response = await this.bridge.sendRequest(endpoint, data);
+      return response;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('fetch')) {
+      if (error instanceof Error && error.message === 'Request timeout') {
         throw new Error(
-          `Studio plugin connection failed. Make sure the Roblox Studio plugin is running and accessible at ${this.baseUrl}`
+          'Studio plugin connection timeout. Make sure the Roblox Studio plugin is running and activated.'
         );
       }
       throw error;

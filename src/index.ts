@@ -10,10 +10,12 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { createHttpServer } from './http-server.js';
 import { RobloxStudioTools } from './tools/index.js';
+import { BridgeService } from './bridge-service.js';
 
 class RobloxStudioMCPServer {
   private server: Server;
   private tools: RobloxStudioTools;
+  private bridge: BridgeService;
 
   constructor() {
     this.server = new Server(
@@ -28,7 +30,8 @@ class RobloxStudioMCPServer {
       }
     );
 
-    this.tools = new RobloxStudioTools();
+    this.bridge = new BridgeService();
+    this.tools = new RobloxStudioTools(this.bridge);
     this.setupToolHandlers();
   }
 
@@ -308,15 +311,20 @@ class RobloxStudioMCPServer {
 
   async run() {
     // Start HTTP server for Studio plugin communication
-    const httpServer = createHttpServer(this.tools);
-    httpServer.listen(3001, () => {
-      console.error('HTTP server listening on port 3001');
+    const httpServer = createHttpServer(this.tools, this.bridge);
+    httpServer.listen(3002, () => {
+      console.error('HTTP server listening on port 3002 for Studio plugin');
     });
 
     // Start MCP server
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Roblox Studio MCP server running on stdio');
+    
+    // Periodic cleanup of old requests
+    setInterval(() => {
+      this.bridge.cleanupOldRequests();
+    }, 5000);
   }
 }
 

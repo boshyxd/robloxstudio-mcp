@@ -4,13 +4,55 @@
 local HttpService = game:GetService("HttpService")
 local StudioService = game:GetService("StudioService")
 local Selection = game:GetService("Selection")
-local ReflectionMetadata = game:GetService("ReflectionMetadata")
+local RunService = game:GetService("RunService")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
 
-local MCPConnector = {
-    serverUrl = "http://localhost:3001",
-    isConnected = false,
-    apiVersion = "v1"
+-- Create plugin toolbar and button
+local toolbar = plugin:CreateToolbar("MCP Integration")
+local button = toolbar:CreateButton(
+    "MCP Server",
+    "Connect to MCP Server for AI Integration",
+    "rbxasset://textures/ui/GuiImagePlaceholder.png"
+)
+
+-- Plugin state
+local pluginState = {
+    serverUrl = "http://localhost:3002",
+    mcpServerUrl = "http://localhost:3001",
+    isActive = false,
+    pollInterval = 0.5, -- Poll every 500ms
+    lastPoll = 0
 }
+
+-- Create plugin GUI
+local screenGui = plugin:CreateDockWidgetPluginGui(
+    "MCPServerStatus",
+    DockWidgetPluginGuiInfo.new(
+        Enum.InitialDockState.Float,
+        false,  -- Widget will be initially disabled
+        false,  -- Don't override the previous enabled state
+        200,    -- Default width
+        100,    -- Default height
+        150,    -- Minimum width
+        75      -- Minimum height
+    )
+)
+screenGui.Title = "MCP Server Status"
+
+-- Create status label
+local statusFrame = Instance.new("Frame")
+statusFrame.Size = UDim2.new(1, 0, 1, 0)
+statusFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+statusFrame.Parent = screenGui
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -10, 1, -10)
+statusLabel.Position = UDim2.new(0, 5, 0, 5)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "MCP Server: Disconnected"
+statusLabel.TextColor3 = Color3.new(1, 1, 1)
+statusLabel.TextScaled = true
+statusLabel.Parent = statusFrame
 
 -- Utility function to safely call Studio APIs
 local function safeCall(func, ...)
@@ -20,24 +62,6 @@ local function safeCall(func, ...)
     else
         warn("MCP Plugin Error: " .. tostring(result))
         return nil
-    end
-end
-
--- HTTP Request wrapper
-local function makeRequest(endpoint, data)
-    local success, response = pcall(function()
-        return HttpService:PostAsync(
-            MCPConnector.serverUrl .. endpoint,
-            HttpService:JSONEncode(data or {}),
-            Enum.HttpContentType.ApplicationJson
-        )
-    end)
-    
-    if success then
-        return HttpService:JSONDecode(response)
-    else
-        warn("Failed to communicate with MCP server: " .. tostring(response))
-        return {error = "Connection failed"}
     end
 end
 
@@ -56,6 +80,76 @@ local function getInstancePath(instance)
     end
     
     return "game." .. table.concat(path, ".")
+end
+
+-- Check for pending requests from MCP server
+local function pollForRequests()
+    if not pluginState.isActive then
+        return
+    end
+    
+    local success, result = pcall(function()
+        return HttpService:RequestAsync({
+            Url = pluginState.serverUrl .. "/poll",
+            Method = "GET",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            }
+        })
+    end)
+    
+    if success and result.Success then
+        local data = HttpService:JSONDecode(result.Body)
+        if data.request then
+            -- Process the request and send response
+            local response = processRequest(data.request)
+            sendResponse(data.requestId, response)
+        end
+    end
+end
+
+-- Send response back to MCP server
+local function sendResponse(requestId, responseData)
+    pcall(function()
+        HttpService:RequestAsync({
+            Url = pluginState.serverUrl .. "/response",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode({
+                requestId = requestId,
+                response = responseData
+            })
+        })
+    end)
+end
+
+-- Process incoming requests
+local function processRequest(request)
+    local endpoint = request.endpoint
+    local data = request.data or {}
+    
+    -- Route to appropriate handler
+    if endpoint == "/api/file-tree" then
+        return handlers.getFileTree(data)
+    elseif endpoint == "/api/file-content" then
+        return handlers.getFileContent(data)
+    elseif endpoint == "/api/search-files" then
+        return handlers.searchFiles(data)
+    elseif endpoint == "/api/file-properties" then
+        return handlers.getFileProperties(data)
+    elseif endpoint == "/api/place-info" then
+        return handlers.getPlaceInfo(data)
+    elseif endpoint == "/api/services" then
+        return handlers.getServices(data)
+    elseif endpoint == "/api/selection" then
+        return handlers.getSelection(data)
+    elseif endpoint == "/api/search-objects" then
+        return handlers.searchObjects(data)
+    else
+        return {error = "Unknown endpoint: " .. tostring(endpoint)}
+    end
 end
 
 -- Get instance by path
@@ -83,8 +177,11 @@ local function getInstanceByPath(path)
     return current
 end
 
+-- Request handlers
+local handlers = {}
+
 -- File System Tools Implementation
-MCPConnector.getFileTree = function(requestData)
+handlers.getFileTree = function(requestData)
     local path = requestData.path or ""
     local startInstance = getInstanceByPath(path)
     
@@ -124,7 +221,7 @@ MCPConnector.getFileTree = function(requestData)
     }
 end
 
-MCPConnector.getFileContent = function(requestData)
+handlers.getFileContent = function(requestData)
     local path = requestData.path
     if not path then
         return {error = "Path is required"}
@@ -147,7 +244,7 @@ MCPConnector.getFileContent = function(requestData)
     }
 end
 
-MCPConnector.searchFiles = function(requestData)
+handlers.searchFiles = function(requestData)
     local query = requestData.query
     local searchType = requestData.searchType or "name"
     
@@ -192,7 +289,7 @@ MCPConnector.searchFiles = function(requestData)
     }
 end
 
-MCPConnector.getFileProperties = function(requestData)
+handlers.getFileProperties = function(requestData)
     local path = requestData.path
     if not path then
         return {error = "Path is required"}
@@ -233,7 +330,7 @@ MCPConnector.getFileProperties = function(requestData)
 end
 
 -- Studio Context Tools Implementation
-MCPConnector.getPlaceInfo = function(requestData)
+handlers.getPlaceInfo = function(requestData)
     return {
         placeName = game.Name,
         placeId = game.PlaceId,
@@ -246,7 +343,7 @@ MCPConnector.getPlaceInfo = function(requestData)
     }
 end
 
-MCPConnector.getServices = function(requestData)
+handlers.getServices = function(requestData)
     local serviceName = requestData.serviceName
     
     if serviceName then
@@ -288,7 +385,7 @@ MCPConnector.getServices = function(requestData)
     end
 end
 
-MCPConnector.getSelection = function(requestData)
+handlers.getSelection = function(requestData)
     local selected = Selection:Get()
     local selection = {}
     
@@ -306,7 +403,7 @@ MCPConnector.getSelection = function(requestData)
     }
 end
 
-MCPConnector.searchObjects = function(requestData)
+handlers.searchObjects = function(requestData)
     local query = requestData.query
     local searchType = requestData.searchType or "name"
     local propertyName = requestData.propertyName
@@ -356,38 +453,55 @@ MCPConnector.searchObjects = function(requestData)
     }
 end
 
--- Initialize HTTP server for MCP communication
-local function initializeHttpServer()
-    -- Create simple HTTP server on port 3002
-    -- Note: This is a simplified implementation
-    -- In practice, you might need to use a more robust HTTP server
+-- Plugin activation/deactivation
+local function activatePlugin()
+    pluginState.isActive = true
+    screenGui.Enabled = true
+    statusLabel.Text = "MCP Server: Active"
+    statusLabel.TextColor3 = Color3.new(0, 1, 0)
+    button.Icon = "rbxasset://textures/ui/GuiImagePlaceholder.png" -- Update with active icon
+    print("MCP Plugin: Activated")
     
-    print("MCP Plugin: Starting HTTP server on port 3002")
-    
-    -- Register endpoints
-    local endpoints = {
-        ["/api/file-tree"] = MCPConnector.getFileTree,
-        ["/api/file-content"] = MCPConnector.getFileContent,
-        ["/api/search-files"] = MCPConnector.searchFiles,
-        ["/api/file-properties"] = MCPConnector.getFileProperties,
-        ["/api/place-info"] = MCPConnector.getPlaceInfo,
-        ["/api/services"] = MCPConnector.getServices,
-        ["/api/selection"] = MCPConnector.getSelection,
-        ["/api/search-objects"] = MCPConnector.searchObjects
-    }
-    
-    -- Simple request handler (this would need to be implemented with actual HTTP server)
-    print("MCP Plugin: Endpoints registered")
-    for endpoint, handler in pairs(endpoints) do
-        print("  " .. endpoint)
+    -- Start polling for requests
+    if not pluginState.connection then
+        pluginState.connection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - pluginState.lastPoll > pluginState.pollInterval then
+                pluginState.lastPoll = now
+                pollForRequests()
+            end
+        end)
     end
-    
-    MCPConnector.isConnected = true
 end
 
--- Initialize the plugin
-initializeHttpServer()
+local function deactivatePlugin()
+    pluginState.isActive = false
+    screenGui.Enabled = false
+    statusLabel.Text = "MCP Server: Disconnected"
+    statusLabel.TextColor3 = Color3.new(1, 0, 0)
+    button.Icon = "rbxasset://textures/ui/GuiImagePlaceholder.png" -- Update with inactive icon
+    print("MCP Plugin: Deactivated")
+    
+    -- Stop polling
+    if pluginState.connection then
+        pluginState.connection:Disconnect()
+        pluginState.connection = nil
+    end
+end
+
+-- Button click handler
+button.Click:Connect(function()
+    if pluginState.isActive then
+        deactivatePlugin()
+    else
+        activatePlugin()
+    end
+end)
+
+-- Plugin unloading
+plugin.Unloading:Connect(function()
+    deactivatePlugin()
+end)
 
 print("Roblox Studio MCP Plugin loaded successfully!")
-print("Server URL: " .. MCPConnector.serverUrl)
-print("Connection status: " .. (MCPConnector.isConnected and "Connected" or "Disconnected"))
+print("Click the MCP Server button in the toolbar to activate")

@@ -26,8 +26,9 @@ An MCP (Model Context Protocol) server that provides AI tools access to Roblox S
    ```
 
 4. **Install the Studio plugin:**
-   - Copy the `studio-plugin/` folder to your Roblox Studio plugins directory
-   - Enable the plugin in Studio
+   - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for detailed instructions
+   - Enable HTTP Requests in Game Settings
+   - Activate the plugin using the toolbar button
 
 ## Development
 
@@ -63,7 +64,13 @@ An MCP (Model Context Protocol) server that provides AI tools access to Roblox S
 
 ## Communication Protocol
 
-The MCP server runs on port 3001 and communicates with the Studio plugin (port 3002) via HTTP requests. The plugin extracts data from Roblox Studio's API and forwards it to the MCP server for AI tool consumption.
+The MCP server exposes tools via stdio for AI integration. The Studio plugin polls the server on port 3002 using HTTP requests. When an AI tool is called:
+
+1. MCP server queues the request
+2. Studio plugin polls and receives the request
+3. Plugin extracts data using Studio APIs
+4. Plugin sends response back to server
+5. Server returns result to AI tool
 
 ## Configuration
 

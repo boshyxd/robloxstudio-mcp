@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { RobloxStudioTools } from './tools/index.js';
+import { BridgeService } from './bridge-service.js';
 
-export function createHttpServer(tools: RobloxStudioTools) {
+export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService) {
   const app = express();
 
   app.use(cors());
@@ -11,6 +12,29 @@ export function createHttpServer(tools: RobloxStudioTools) {
   // Health check endpoint
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'robloxstudio-mcp' });
+  });
+
+  // Polling endpoint for Studio plugin
+  app.get('/poll', (req, res) => {
+    const pendingRequest = bridge.getPendingRequest();
+    if (pendingRequest) {
+      res.json({ request: pendingRequest.request, requestId: pendingRequest.requestId });
+    } else {
+      res.json({ request: null });
+    }
+  });
+
+  // Response endpoint for Studio plugin
+  app.post('/response', (req, res) => {
+    const { requestId, response, error } = req.body;
+    
+    if (error) {
+      bridge.rejectRequest(requestId, error);
+    } else {
+      bridge.resolveRequest(requestId, response);
+    }
+    
+    res.json({ success: true });
   });
 
   // MCP tool proxy endpoints - these will be called by AI tools
