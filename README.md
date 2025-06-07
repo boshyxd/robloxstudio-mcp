@@ -47,27 +47,28 @@ The MCP server requires a companion Roblox Studio plugin:
 This is a **dual-component system** bridging Roblox Studio with AI assistants:
 
 ```mermaid
+%%{init: {'theme':'dark', 'themeVariables': {'primaryColor':'#2d3748', 'primaryTextColor':'#ffffff', 'primaryBorderColor':'#4a5568', 'lineColor':'#718096', 'sectionBkgColor':'#1a202c', 'altSectionBkgColor':'#2d3748', 'gridColor':'#4a5568', 'secondaryColor':'#2b6cb0', 'tertiaryColor':'#319795'}}}%%
 graph TB
-    subgraph "AI Environment"
-        AI[🤖 AI Assistant<br/>Claude Code/Desktop]
-        MCP[📡 MCP Server<br/>Node.js + TypeScript]
+    subgraph AI_ENV ["🤖 AI Environment"]
+        AI["🤖 AI Assistant<br/>Claude Code/Desktop"]
+        MCP["📡 MCP Server<br/>Node.js + TypeScript"]
     end
     
-    subgraph "Communication Layer"
-        HTTP[🔗 HTTP Bridge<br/>localhost:3002]
-        QUEUE[📋 Request Queue<br/>UUID tracking]
+    subgraph COMM_LAYER ["🔗 Communication Layer"]
+        HTTP["🌐 HTTP Bridge<br/>localhost:3002"]
+        QUEUE["📋 Request Queue<br/>UUID tracking"]
     end
     
-    subgraph "Roblox Studio Environment"
-        PLUGIN[🎮 Studio Plugin<br/>Luau Script]
-        STUDIO[🎯 Roblox Studio<br/>APIs & Data]
+    subgraph STUDIO_ENV ["🎮 Roblox Studio Environment"]
+        PLUGIN["🎮 Studio Plugin<br/>Luau Script"]
+        STUDIO["🎯 Roblox Studio<br/>APIs & Data"]
     end
     
-    subgraph "15 AI Tools"
-        FILE[📁 File System<br/>Trees, Content, Search]
-        CONTEXT[🎯 Studio Context<br/>Services, Selection]
-        PROPS[🔍 Properties<br/>Instances, Children]
-        PROJECT[🏢 Project Analysis<br/>Structure, Dependencies]
+    subgraph TOOLS ["🛠️ 15 AI Tools"]
+        FILE["📁 File System<br/>Trees, Content, Search"]
+        CONTEXT["🎯 Studio Context<br/>Services, Selection"]
+        PROPS["🔍 Properties<br/>Instances, Children"]
+        PROJECT["🏢 Project Analysis<br/>Structure, Dependencies"]
     end
     
     AI -->|stdio| MCP
@@ -86,11 +87,19 @@ graph TB
     MCP -.->|Exposes| PROPS
     MCP -.->|Exposes| PROJECT
     
-    style AI fill:#e1f5fe
-    style MCP fill:#f3e5f5
-    style HTTP fill:#fff3e0
-    style PLUGIN fill:#e8f5e8
-    style STUDIO fill:#fce4ec
+    classDef aiStyle fill:#1e40af,stroke:#3b82f6,stroke-width:2px,color:#ffffff
+    classDef mcpStyle fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#ffffff
+    classDef httpStyle fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#ffffff
+    classDef pluginStyle fill:#059669,stroke:#10b981,stroke-width:2px,color:#ffffff
+    classDef studioStyle fill:#dc2626,stroke:#ef4444,stroke-width:2px,color:#ffffff
+    classDef toolStyle fill:#0891b2,stroke:#06b6d4,stroke-width:2px,color:#ffffff
+    
+    class AI aiStyle
+    class MCP mcpStyle
+    class HTTP,QUEUE httpStyle
+    class PLUGIN pluginStyle
+    class STUDIO studioStyle
+    class FILE,CONTEXT,PROPS,PROJECT toolStyle
 ```
 
 ### **Key Components:**
@@ -159,42 +168,44 @@ npm run typecheck   # TypeScript validation
 ## 📊 Communication Protocol
 
 ```mermaid
+%%{init: {'theme':'dark', 'themeVariables': {'primaryColor':'#2d3748', 'primaryTextColor':'#ffffff', 'primaryBorderColor':'#4a5568', 'lineColor':'#10b981', 'sectionBkgColor':'#1a202c', 'altSectionBkgColor':'#2d3748', 'gridColor':'#4a5568', 'secondaryColor':'#3b82f6', 'tertiaryColor':'#8b5cf6', 'background':'#1a202c', 'mainBkg':'#2d3748', 'secondBkg':'#374151', 'tertiaryColor':'#6366f1'}}}%%
 sequenceDiagram
     participant AI as 🤖 AI Assistant
-    participant MCP as 📡 MCP Server
-    participant HTTP as 🔗 HTTP Bridge
+    participant MCP as 📡 MCP Server  
+    participant HTTP as 🌐 HTTP Bridge
     participant PLUGIN as 🎮 Studio Plugin
     participant STUDIO as 🎯 Roblox Studio
     
-    Note over AI,STUDIO: Tool Request Flow
+    Note over AI,STUDIO: 🚀 Tool Request Flow
     
-    AI->>MCP: Call tool (e.g., get_file_tree)
-    MCP->>HTTP: Queue request with UUID
+    AI->>+MCP: Call tool (e.g., get_file_tree)
+    MCP->>+HTTP: Queue request with UUID
     HTTP->>HTTP: Store in pending requests map
+    HTTP-->>-MCP: Request queued ✅
     
-    Note over PLUGIN: Polling every 500ms
-    PLUGIN->>HTTP: GET /poll
-    HTTP->>PLUGIN: Return pending request + UUID
+    Note over PLUGIN: 🔄 Polling every 500ms
+    PLUGIN->>+HTTP: GET /poll
+    HTTP->>-PLUGIN: Return pending request + UUID
     
-    PLUGIN->>STUDIO: Execute Studio APIs
-    Note over STUDIO: game.ServerStorage<br/>Selection:Get()<br/>Instance properties
-    STUDIO->>PLUGIN: Return Studio data
+    PLUGIN->>+STUDIO: Execute Studio APIs
+    Note over STUDIO: 🎯 game.ServerStorage<br/>📋 Selection:Get()<br/>🔍 Instance properties
+    STUDIO->>-PLUGIN: Return Studio data 📊
     
-    PLUGIN->>HTTP: POST /response with UUID + data
-    HTTP->>MCP: Resolve promise with data
-    MCP->>AI: Return tool result
+    PLUGIN->>+HTTP: POST /response with UUID + data
+    HTTP->>-MCP: Resolve promise with data
+    MCP->>-AI: Return tool result 🎉
     
-    Note over AI,STUDIO: Error Handling
+    Note over AI,STUDIO: ⚠️ Error Handling
     
     alt Request Timeout (30s)
-        HTTP->>MCP: Reject promise with timeout
-        MCP->>AI: Return error message
+        HTTP->>MCP: Reject promise with timeout ⏰
+        MCP->>AI: Return error message ❌
     end
     
     alt Plugin Disconnected
-        PLUGIN->>HTTP: Connection lost
-        HTTP->>HTTP: Exponential backoff retry
-        Note over PLUGIN: Status: "Waiting for server..."
+        PLUGIN->>HTTP: Connection lost 🔌
+        HTTP->>HTTP: Exponential backoff retry 🔄
+        Note over PLUGIN: Status: "Waiting for server..." ⏳
     end
 ```
 
