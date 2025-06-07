@@ -26,17 +26,21 @@ claude mcp add robloxstudio-mcp
 
 The MCP server requires a companion Roblox Studio plugin:
 
-1. **Auto-install** (Recommended):
+1. **Roblox Creator Store** (Easiest ⭐):
+   - Install from: https://create.roblox.com/store/asset/132985143757536
+   - Click "Install" → Opens in Studio automatically
+
+2. **Manual download**:
    - Download [MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
    - Save to your `%LOCALAPPDATA%/Roblox/Plugins` folder
 
-2. **Manual setup**:
-   - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for detailed instructions
+3. **Advanced setup**:
+   - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for other methods
 
-3. **Enable in Studio**:
-   - ✅ Enable "Allow HTTP Requests" in Game Settings → Security
-   - 🔘 Click the "MCP Server" button in the Plugins toolbar
-   - 🟢 Status should show "Connected" when working
+**After installation:**
+- ✅ Enable "Allow HTTP Requests" in Game Settings → Security
+- 🔘 Click the "MCP Server" button in the Plugins toolbar
+- 🟢 Status should show "Connected" when working
 
 ## 🏗️ Architecture Overview
 

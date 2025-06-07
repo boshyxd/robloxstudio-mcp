@@ -2,9 +2,17 @@
 
 Complete your AI assistant integration with this easy-to-install Studio plugin. Works with Claude Code, Claude Desktop, and any MCP-compatible AI.
 
-## 🚀 Quick Installation (Recommended)
+## 🚀 Quick Installation
 
-### **Method 1: Direct Download** ⭐
+### **Method 1: Roblox Creator Store** ⭐ (Easiest)
+1. **Install from Creator Store:**
+   - Visit: https://create.roblox.com/store/asset/132985143757536
+   - Click **"Install"** button
+   - Plugin automatically opens in Studio
+
+2. **No restart needed** - Plugin appears immediately in toolbar!
+
+### **Method 2: Direct Download**
 1. **Download the plugin:**
    - **GitHub Release**: [Download MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
    - This is the official Roblox plugin format
@@ -16,7 +24,7 @@ Complete your AI assistant integration with this easy-to-install Studio plugin. 
 
 3. **Restart Roblox Studio** - Plugin appears automatically!
 
-### **Method 2: Save as Local Plugin**
+### **Method 3: Save as Local Plugin**
 1. **Copy the plugin code:**
    - Open [plugin.luau](https://github.com/boshyxd/robloxstudio-mcp/blob/main/studio-plugin/plugin.luau) on GitHub
    - Copy all the code (Ctrl+A, Ctrl+C)
