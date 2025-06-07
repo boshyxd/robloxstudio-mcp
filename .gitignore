@@ -21,6 +21,9 @@ dist/
 *.swp
 *.swo
 
+.CLAUDE.md
+.MCP_Server_Plan.md
+
 # OS files
 .DS_Store
 Thumbs.db

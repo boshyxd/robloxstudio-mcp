@@ -1,105 +1,126 @@
 # Roblox Studio MCP Plugin Installation Guide
 
-## Prerequisites
+Complete your AI assistant integration with this easy-to-install Studio plugin. Works with Claude Code, Claude Desktop, and any MCP-compatible AI.
 
-1. Roblox Studio installed and running
-2. MCP server running on your local machine
-3. HTTP Requests enabled in Studio (Game Settings > Security > Allow HTTP Requests)
+## 🚀 Quick Installation (Recommended)
 
-## Installation Steps
+### **Method 1: Direct Download** ⭐
+1. **Download the plugin:**
+   - **GitHub Release**: [Download plugin.luau](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/plugin.luau)
+   - Save as `RobloxStudioMCP.luau` 
 
-### Method 1: Local Plugin Installation (Recommended for Development)
+2. **Install to plugins folder:**
+   - **Windows**: Save to `%LOCALAPPDATA%/Roblox/Plugins/`
+   - **macOS**: Save to `~/Documents/Roblox/Plugins/`
+   - **Or use Studio**: Plugins tab → Plugins Folder → drop the file
 
-1. **Save the plugin file:**
-   - Copy the `plugin.lua` file content
-   - In Roblox Studio, create a new Script in any location
-   - Paste the plugin code into the script
-   - Save the script locally (File > Save to File) as `MCPPlugin.lua`
+3. **Restart Roblox Studio** - Plugin appears automatically!
 
-2. **Install as local plugin:**
-   - In Studio, go to the "Plugins" tab
-   - Click "Plugins Folder" to open your local plugins directory
-   - Copy your saved `MCPPlugin.lua` file into this folder
-   - Restart Roblox Studio
+### **Method 2: Save as Local Plugin**
+1. **Copy the plugin code:**
+   - Open [plugin.luau](https://github.com/boshyxd/robloxstudio-mcp/blob/main/studio-plugin/plugin.luau) on GitHub
+   - Copy all the code (Ctrl+A, Ctrl+C)
 
-3. **Verify installation:**
-   - After restart, you should see "MCP Integration" in your plugins toolbar
-   - Click the "MCP Server" button to activate the plugin
-
-### Method 2: Plugin Script Installation
-
-1. **Create plugin script:**
-   - In Roblox Studio, open any place
-   - In the Explorer, navigate to `ServerScriptService`
-   - Right-click and select "Insert Object" > "Script"
-   - Name it "MCPPlugin"
+2. **Create in Studio:**
+   - Open Roblox Studio with any place
+   - Create a new Script in ServerScriptService  
    - Paste the plugin code
+   - **Right-click script** → **"Save as Local Plugin..."**
+   - Name it "Roblox Studio MCP"
 
-2. **Convert to plugin:**
-   - Right-click the script
-   - Select "Save as Local Plugin..."
-   - Give it a name like "MCP Integration"
-   - Click Save
+3. **Plugin appears immediately** in your toolbar!
 
-3. **The plugin will be immediately available in your toolbar**
+## ⚙️ Setup & Configuration
 
-## Configuration
+### **1. Enable HTTP Requests (Required)**
+🔐 **Game Settings** → **Security** → ✅ **"Allow HTTP Requests"**
 
-1. **Enable HTTP Requests:**
-   - Open Game Settings (Home tab > Game Settings)
-   - Navigate to Security
-   - Enable "Allow HTTP Requests"
-   - Save settings
+### **2. Activate the Plugin**
+🔘 **Plugins toolbar** → Click **"MCP Server"** button
+- 🟢 **Green status** = Connected and ready
+- 🔴 **Red status** = Disconnected (normal until MCP server runs)
 
-2. **Start MCP Server:**
-   - In your terminal, navigate to the MCP server directory
-   - Run: `npm start`
-   - The server should start on port 3002
+### **3. Install MCP Server** 
+Choose your AI assistant:
 
-3. **Activate Plugin:**
-   - Click the "MCP Server" button in the toolbar
-   - The status window should show "MCP Server: Active" in green
-   - The plugin will now poll for requests from the MCP server
+**For Claude Code:**
+```bash
+claude mcp add robloxstudio-mcp
+```
 
-## Usage
+**For Claude Desktop/Others:**
+```json
+{
+  "mcpServers": {
+    "robloxstudio-mcp": {
+      "command": "npx",
+      "args": ["-y", "robloxstudio-mcp"]
+    }
+  }
+}
+```
 
-Once activated, the plugin will:
-- Poll the MCP server every 500ms for incoming requests
-- Process requests for Studio data (scripts, instances, properties, etc.)
-- Send responses back to the MCP server
-- Display connection status in the dock widget
+## 🎯 How It Works
 
-## Troubleshooting
+1. **🤖 AI calls tool** → MCP server queues request
+2. **🔄 Plugin polls** every 500ms for work
+3. **⚙️ Plugin executes** Studio API calls  
+4. **📤 Plugin responds** with extracted data
+5. **✅ AI receives** comprehensive Studio information
 
-### Plugin doesn't appear in toolbar
-- Ensure the plugin file was saved in the correct plugins folder
-- Try restarting Roblox Studio
-- Check Output window for any error messages
+**Available Tools:** 15 specialized tools for file trees, dependencies, properties, project structure, and more!
 
-### "HTTP 403 Forbidden" errors
-- Make sure "Allow HTTP Requests" is enabled in Game Settings
-- Verify the MCP server is running on the correct port (3002)
+## 🔧 Troubleshooting
 
-### Connection timeout errors
-- Check that the MCP server is running (`npm start`)
-- Ensure no firewall is blocking localhost connections
-- Verify the server URLs in the plugin match your setup
+### **Plugin Missing from Toolbar**
+- ✅ Verify file saved to correct plugins folder
+- 🔄 Restart Roblox Studio completely
+- 📝 Check Output window for error messages
 
-### Plugin shows "Disconnected"
-- Click the MCP Server button to activate
-- Check the Output window for error messages
-- Ensure the MCP server is accessible at http://localhost:3002
+### **"HTTP 403 Forbidden" Errors**  
+- ✅ Enable "Allow HTTP Requests" in Game Settings → Security
+- 🔍 Verify MCP server is running (status should show connected)
 
-## Security Notes
+### **Plugin Shows "Disconnected"**
+- ✅ **Normal behavior** when MCP server isn't running
+- 🔘 Click "MCP Server" button to activate
+- 📡 Install MCP server using commands above
 
-- The plugin only works with local servers (localhost)
-- No external connections are made
-- All data stays on your local machine
-- The plugin only reads data, it doesn't modify your place
+### **Connection Issues**
+- 🔥 Check Windows Firewall isn't blocking localhost:3002
+- 🖥️ Restart both Studio and your AI assistant
+- 📝 Check Studio Output window for detailed error messages
 
-## Development Tips
+## 🔒 Security & Privacy
 
-- Use the Output window to see debug messages
-- The status widget shows real-time connection status
-- You can modify polling interval in the plugin code if needed
-- For debugging, add print statements to track request/response flow
+- 🏠 **Local-only**: All communication stays on your machine
+- 🚫 **No external servers**: Plugin only talks to localhost
+- 👁️ **Read-only access**: Plugin extracts data but never modifies your place
+- 🔐 **No data collection**: Your projects remain private
+
+## 🛠️ Advanced Usage
+
+### **Plugin Features**
+- **Real-time status**: Visual connection indicators
+- **Smart polling**: Exponential backoff for failed connections  
+- **Error recovery**: Automatic retry with timeout handling
+- **Debug friendly**: Comprehensive logging in Output window
+
+### **Customization**
+- 📝 **Server URL**: Modify in plugin UI (default: http://localhost:3002)
+- ⏱️ **Poll interval**: 500ms default (editable in code)
+- 🔧 **Timeout settings**: 30-second request timeouts
+
+### **Development Mode**
+```lua
+-- Enable debug logging in plugin code:
+local DEBUG_MODE = true
+```
+
+## 💡 Pro Tips
+
+- 🖥️ **Keep Studio open** while using AI assistants
+- 🔄 **Plugin auto-connects** when MCP server starts
+- 📊 **Monitor status** via the dock widget
+- 🎯 **Use AI tools** to explore game architecture, find bugs, analyze dependencies
+- 🚀 **Perfect for** code reviews, debugging, and understanding complex projects!

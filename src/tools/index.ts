@@ -181,8 +181,12 @@ export class RobloxStudioTools {
   }
 
   // Project Tools
-  async getProjectStructure() {
-    const response = await this.client.request('/api/project-structure', {});
+  async getProjectStructure(path?: string, maxDepth?: number, scriptsOnly?: boolean) {
+    const response = await this.client.request('/api/project-structure', { 
+      path, 
+      maxDepth, 
+      scriptsOnly 
+    });
     return {
       content: [
         {
