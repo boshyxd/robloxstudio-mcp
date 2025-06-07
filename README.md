@@ -6,7 +6,7 @@ A powerful MCP (Model Context Protocol) server that gives AI assistants comprehe
 
 **For Claude Code users:**
 ```bash
-claude mcp add robloxstudio-mcp
+claude mcp add robloxstudio -- npx -y robloxstudio-mcp
 ```
 
 **For other MCP clients (Claude Desktop, etc.):**
