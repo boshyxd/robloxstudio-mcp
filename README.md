@@ -91,24 +91,6 @@ AI Assistant ←→ MCP Server ←→ HTTP Bridge ←→ Studio Plugin ←→ Ro
 - **Dependency Mapping**: Complete require() call analysis
 - **Reference Validation**: 27+ issue types detected automatically
 
-## 🎮 Perfect for Game Analysis
-
-This tool excels at understanding complex Roblox projects. Based on testing with a professional FPS game:
-
-**Discovered Architecture:**
-- ✅ **9 weapon categories** (Assault, Shotgun, SMG, Pistol, Sniper, DMR, etc.)
-- ✅ **74 settings-related modules** (comprehensive settings system)  
-- ✅ **Modular MainModule design** (professional organization)
-- ✅ **Custom frameworks** ("Vaunt" networking, BetterReplication)
-- ✅ **27 broken references** found and categorized
-
-**Use Cases:**
-- 🔍 **Code Review**: Find all scripts using a specific module
-- 🐛 **Debugging**: Locate broken requires and missing dependencies  
-- 📐 **Architecture Analysis**: Understand game structure and patterns
-- ⚡ **Performance Audit**: Find heavy scripts and unused assets
-- 🎨 **UI Exploration**: Map GUI hierarchies and text content
-
 ## 🚀 Development & Testing
 
 ### **Commands**
