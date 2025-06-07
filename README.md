@@ -27,8 +27,8 @@ claude mcp add robloxstudio-mcp
 The MCP server requires a companion Roblox Studio plugin:
 
 1. **Auto-install** (Recommended):
-   - Download from [studio-plugin/plugin.luau](studio-plugin/plugin.luau)
-   - Save as `RobloxStudioMCP.luau` in your `%LOCALAPPDATA%/Roblox/Plugins` folder
+   - Download [MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
+   - Save to your `%LOCALAPPDATA%/Roblox/Plugins` folder
 
 2. **Manual setup**:
    - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for detailed instructions

@@ -6,8 +6,8 @@ Complete your AI assistant integration with this easy-to-install Studio plugin. 
 
 ### **Method 1: Direct Download** ⭐
 1. **Download the plugin:**
-   - **GitHub Release**: [Download plugin.luau](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/plugin.luau)
-   - Save as `RobloxStudioMCP.luau` 
+   - **GitHub Release**: [Download MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
+   - This is the official Roblox plugin format
 
 2. **Install to plugins folder:**
    - **Windows**: Save to `%LOCALAPPDATA%/Roblox/Plugins/`
