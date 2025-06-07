@@ -337,17 +337,18 @@ class RobloxStudioMCPServer {
       });
     });
 
-    // Wait for plugin to connect before starting MCP server
-    console.error('Waiting for Studio plugin to connect...');
-    while (!(httpServer as any).isPluginConnected()) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    console.error('Studio plugin connected!');
-
-    // Start MCP server
+    // Start MCP server immediately (don't wait for plugin)
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Roblox Studio MCP server running on stdio');
+    
+    // Monitor plugin connection in background
+    console.error('Waiting for Studio plugin to connect...');
+    setInterval(() => {
+      if ((httpServer as any).isPluginConnected()) {
+        console.error('Studio plugin connected!');
+      }
+    }, 1000);
     
     // Periodic cleanup of old requests
     setInterval(() => {

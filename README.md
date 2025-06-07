@@ -2,33 +2,58 @@
 
 An MCP (Model Context Protocol) server that provides AI tools access to Roblox Studio data through a plugin-based architecture.
 
-## Architecture
+## Quick Installation
 
-- **MCP Server** (TypeScript/Node.js) - Handles AI tool calls
-- **Studio Plugin** (Luau) - Extracts Studio data and communicates with MCP server
-- **HTTP Bridge** - Communication layer between plugin and server
+### For End Users (Easy Setup)
 
-## Quick Start
+Add to your MCP configuration (like in Claude Desktop or other MCP clients):
 
-1. **Install dependencies:**
+```json
+{
+  "mcpServers": {
+    "robloxstudio": {
+      "command": "npx",
+      "args": ["-y", "robloxstudio-mcp"],
+      "description": "Roblox Studio integration for AI assistants"
+    }
+  }
+}
+```
+
+Or use with Claude Code MCP add command:
+```bash
+claude mcp add robloxstudio -- npx -y robloxstudio-mcp
+```
+
+### For Developers
+
+1. **Clone and install:**
    ```bash
+   git clone <repo-url>
+   cd robloxstudio-mcp
    npm install
    ```
 
-2. **Build the project:**
+2. **Build and test:**
    ```bash
    npm run build
-   ```
-
-3. **Start the MCP server:**
-   ```bash
    npm start
    ```
 
-4. **Install the Studio plugin:**
+## Studio Plugin Setup
+
+**Required for both installation methods:**
+
+1. **Install the Studio plugin:**
    - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for detailed instructions
    - Enable HTTP Requests in Game Settings
    - Activate the plugin using the toolbar button
+
+## Architecture
+
+- **MCP Server** (TypeScript/Node.js) - Handles AI tool calls via stdio
+- **Studio Plugin** (Luau) - Extracts Studio data and communicates with MCP server
+- **HTTP Bridge** - Communication layer between plugin and server (localhost:3002)
 
 ## Development
 

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "robloxstudio": {
+      "command": "npx",
+      "args": ["-y", "robloxstudio-mcp"],
+      "description": "Roblox Studio integration - access Studio data, scripts, and objects through AI tools"
+    }
+  }
+}
