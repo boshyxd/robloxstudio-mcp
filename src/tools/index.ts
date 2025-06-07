@@ -220,4 +220,60 @@ export class RobloxStudioTools {
       ]
     };
   }
+
+  // Property Modification Tools
+  async setProperty(instancePath: string, propertyName: string, propertyValue: any) {
+    if (!instancePath || !propertyName) {
+      throw new Error('Instance path and property name are required for set_property');
+    }
+    const response = await this.client.request('/api/set-property', { 
+      instancePath, 
+      propertyName, 
+      propertyValue 
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  // Object Creation Tools
+  async createObject(className: string, parent: string, name?: string, properties?: Record<string, any>) {
+    if (!className || !parent) {
+      throw new Error('Class name and parent are required for create_object');
+    }
+    const response = await this.client.request('/api/create-object', { 
+      className, 
+      parent, 
+      name, 
+      properties 
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  async deleteObject(instancePath: string) {
+    if (!instancePath) {
+      throw new Error('Instance path is required for delete_object');
+    }
+    const response = await this.client.request('/api/delete-object', { instancePath });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
 }

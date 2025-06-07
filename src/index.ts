@@ -262,6 +262,69 @@ class RobloxStudioMCPServer {
               type: 'object',
               properties: {}
             }
+          },
+          // Property Modification Tools
+          {
+            name: 'set_property',
+            description: 'Set a property on any Roblox instance',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                instancePath: {
+                  type: 'string',
+                  description: 'Path to the instance (e.g., "game.Workspace.Part")'
+                },
+                propertyName: {
+                  type: 'string',
+                  description: 'Name of the property to set'
+                },
+                propertyValue: {
+                  description: 'Value to set the property to (any type)'
+                }
+              },
+              required: ['instancePath', 'propertyName', 'propertyValue']
+            }
+          },
+          // Object Creation/Deletion Tools
+          {
+            name: 'create_object',
+            description: 'Create a new Roblox object instance',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                className: {
+                  type: 'string',
+                  description: 'Roblox class name (e.g., "Part", "Script", "Folder")'
+                },
+                parent: {
+                  type: 'string',
+                  description: 'Path to the parent instance (e.g., "game.Workspace")'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Optional name for the new object'
+                },
+                properties: {
+                  type: 'object',
+                  description: 'Optional properties to set on creation'
+                }
+              },
+              required: ['className', 'parent']
+            }
+          },
+          {
+            name: 'delete_object',
+            description: 'Delete a Roblox object instance',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                instancePath: {
+                  type: 'string',
+                  description: 'Path to the instance to delete'
+                }
+              },
+              required: ['instancePath']
+            }
           }
         ]
       };
@@ -309,6 +372,16 @@ class RobloxStudioMCPServer {
             return await this.tools.getDependencies((args as any)?.modulePath);
           case 'validate_references':
             return await this.tools.validateReferences();
+          
+          // Property Modification Tools
+          case 'set_property':
+            return await this.tools.setProperty((args as any)?.instancePath as string, (args as any)?.propertyName as string, (args as any)?.propertyValue);
+          
+          // Object Creation/Deletion Tools
+          case 'create_object':
+            return await this.tools.createObject((args as any)?.className as string, (args as any)?.parent as string, (args as any)?.name, (args as any)?.properties);
+          case 'delete_object':
+            return await this.tools.deleteObject((args as any)?.instancePath as string);
 
           default:
             throw new McpError(

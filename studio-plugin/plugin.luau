@@ -287,6 +287,12 @@ processRequest = function(request)
 		return handlers.getDependencies(data)
 	elseif endpoint == "/api/validate-references" then
 		return handlers.validateReferences(data)
+	elseif endpoint == "/api/set-property" then
+		return handlers.setProperty(data)
+	elseif endpoint == "/api/create-object" then
+		return handlers.createObject(data)
+	elseif endpoint == "/api/delete-object" then
+		return handlers.deleteObject(data)
 	else
 		return { error = "Unknown endpoint: " .. tostring(endpoint) }
 	end
@@ -1131,6 +1137,172 @@ handlers.validateReferences = function(requestData)
 		stats = stats,
 		timestamp = tick(),
 	}
+end
+
+handlers.setProperty = function(requestData)
+	local instancePath = requestData.instancePath
+	local propertyName = requestData.propertyName
+	local propertyValue = requestData.propertyValue
+
+	if not instancePath or not propertyName then
+		return { error = "Instance path and property name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		if propertyName == "Parent" then
+			local parentInstance = getInstanceByPath(propertyValue)
+			if parentInstance then
+				instance.Parent = parentInstance
+			else
+				return { error = "Parent instance not found: " .. propertyValue }
+			end
+		elseif propertyName == "Name" then
+			instance.Name = tostring(propertyValue)
+		elseif propertyName == "Source" and instance:IsA("BaseScript") then
+			instance.Source = tostring(propertyValue)
+		elseif propertyName == "Enabled" and instance:IsA("BaseScript") then
+			instance.Enabled = propertyValue == true or propertyValue == "true"
+		elseif propertyName == "Text" and (instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox")) then
+			instance.Text = tostring(propertyValue)
+		elseif propertyName == "Visible" and instance:IsA("GuiObject") then
+			instance.Visible = propertyValue == true or propertyValue == "true"
+		elseif propertyName == "Anchored" and instance:IsA("BasePart") then
+			instance.Anchored = propertyValue == true or propertyValue == "true"
+		elseif propertyName == "CanCollide" and instance:IsA("BasePart") then
+			instance.CanCollide = propertyValue == true or propertyValue == "true"
+		elseif propertyName == "Transparency" and instance:IsA("BasePart") then
+			instance.Transparency = tonumber(propertyValue) or 0
+		elseif propertyName == "BrickColor" and instance:IsA("BasePart") then
+			instance.BrickColor = BrickColor.new(tostring(propertyValue))
+		elseif propertyName == "Material" and instance:IsA("BasePart") then
+			instance.Material = Enum.Material[tostring(propertyValue)] or instance.Material
+		elseif propertyName == "Size" and instance:IsA("BasePart") then
+			local parts = string.split(tostring(propertyValue), ",")
+			if #parts == 3 then
+				instance.Size = Vector3.new(tonumber(parts[1]) or 1, tonumber(parts[2]) or 1, tonumber(parts[3]) or 1)
+			end
+		elseif propertyName == "Position" and instance:IsA("BasePart") then
+			local parts = string.split(tostring(propertyValue), ",")
+			if #parts == 3 then
+				instance.Position = Vector3.new(tonumber(parts[1]) or 0, tonumber(parts[2]) or 0, tonumber(parts[3]) or 0)
+			end
+		else
+			instance[propertyName] = propertyValue
+		end
+
+		ChangeHistoryService:SetWaypoint("Set " .. propertyName .. " property")
+		return true
+	end)
+
+	if success and result ~= false then
+		return {
+			success = true,
+			instancePath = instancePath,
+			propertyName = propertyName,
+			propertyValue = propertyValue,
+			message = "Property set successfully",
+		}
+	else
+		return { 
+			error = "Failed to set property: " .. tostring(result),
+			instancePath = instancePath,
+			propertyName = propertyName,
+		}
+	end
+end
+
+handlers.createObject = function(requestData)
+	local className = requestData.className
+	local parentPath = requestData.parent
+	local name = requestData.name
+	local properties = requestData.properties or {}
+
+	if not className or not parentPath then
+		return { error = "Class name and parent are required" }
+	end
+
+	local parentInstance = getInstanceByPath(parentPath)
+	if not parentInstance then
+		return { error = "Parent instance not found: " .. parentPath }
+	end
+
+	local success, newInstance = pcall(function()
+		local instance = Instance.new(className)
+		
+		if name then
+			instance.Name = name
+		end
+
+		for propertyName, propertyValue in pairs(properties) do
+			pcall(function()
+				instance[propertyName] = propertyValue
+			end)
+		end
+
+		instance.Parent = parentInstance
+		ChangeHistoryService:SetWaypoint("Create " .. className)
+		return instance
+	end)
+
+	if success and newInstance then
+		return {
+			success = true,
+			className = className,
+			parent = parentPath,
+			instancePath = getInstancePath(newInstance),
+			name = newInstance.Name,
+			message = "Object created successfully",
+		}
+	else
+		return { 
+			error = "Failed to create object: " .. tostring(newInstance),
+			className = className,
+			parent = parentPath,
+		}
+	end
+end
+
+handlers.deleteObject = function(requestData)
+	local instancePath = requestData.instancePath
+
+	if not instancePath then
+		return { error = "Instance path is required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	if instance == game then
+		return { error = "Cannot delete the game instance" }
+	end
+
+	local success, result = pcall(function()
+		local name = instance.Name
+		local className = instance.ClassName
+		instance:Destroy()
+		ChangeHistoryService:SetWaypoint("Delete " .. className .. " (" .. name .. ")")
+		return true
+	end)
+
+	if success then
+		return {
+			success = true,
+			instancePath = instancePath,
+			message = "Object deleted successfully",
+		}
+	else
+		return { 
+			error = "Failed to delete object: " .. tostring(result),
+			instancePath = instancePath,
+		}
+	end
 end
 
 local function updateUIState()
