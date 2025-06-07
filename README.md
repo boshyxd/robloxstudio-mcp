@@ -46,10 +46,54 @@ The MCP server requires a companion Roblox Studio plugin:
 
 This is a **dual-component system** bridging Roblox Studio with AI assistants:
 
-```
-AI Assistant ←→ MCP Server ←→ HTTP Bridge ←→ Studio Plugin ←→ Roblox Studio APIs
+```mermaid
+graph TB
+    subgraph "AI Environment"
+        AI[🤖 AI Assistant<br/>Claude Code/Desktop]
+        MCP[📡 MCP Server<br/>Node.js + TypeScript]
+    end
+    
+    subgraph "Communication Layer"
+        HTTP[🔗 HTTP Bridge<br/>localhost:3002]
+        QUEUE[📋 Request Queue<br/>UUID tracking]
+    end
+    
+    subgraph "Roblox Studio Environment"
+        PLUGIN[🎮 Studio Plugin<br/>Luau Script]
+        STUDIO[🎯 Roblox Studio<br/>APIs & Data]
+    end
+    
+    subgraph "15 AI Tools"
+        FILE[📁 File System<br/>Trees, Content, Search]
+        CONTEXT[🎯 Studio Context<br/>Services, Selection]
+        PROPS[🔍 Properties<br/>Instances, Children]
+        PROJECT[🏢 Project Analysis<br/>Structure, Dependencies]
+    end
+    
+    AI -->|stdio| MCP
+    MCP -->|HTTP POST| HTTP
+    HTTP -->|Queue Request| QUEUE
+    PLUGIN -->|Poll every 500ms| HTTP
+    HTTP -->|Pending Work| PLUGIN
+    PLUGIN -->|Execute APIs| STUDIO
+    STUDIO -->|Return Data| PLUGIN
+    PLUGIN -->|HTTP Response| HTTP
+    HTTP -->|Resolve Promise| MCP
+    MCP -->|Tool Result| AI
+    
+    MCP -.->|Exposes| FILE
+    MCP -.->|Exposes| CONTEXT  
+    MCP -.->|Exposes| PROPS
+    MCP -.->|Exposes| PROJECT
+    
+    style AI fill:#e1f5fe
+    style MCP fill:#f3e5f5
+    style HTTP fill:#fff3e0
+    style PLUGIN fill:#e8f5e8
+    style STUDIO fill:#fce4ec
 ```
 
+### **Key Components:**
 - **🧠 MCP Server** (Node.js/TypeScript) - Exposes 15 tools via stdio for AI integration
 - **🔗 HTTP Bridge** - Request/response queue on localhost:3002 with 30s timeouts  
 - **🎮 Studio Plugin** (Luau) - Polls every 500ms, executes Studio API calls, handles errors
@@ -114,12 +158,45 @@ npm run typecheck   # TypeScript validation
 
 ## 📊 Communication Protocol
 
-**Request Flow:**
-1. 🤖 AI calls MCP tool → 📡 MCP server queues request
-2. 🔄 Studio plugin polls /poll endpoint every 500ms  
-3. ⚙️ Plugin executes Studio API calls (game.ServerStorage, etc.)
-4. 📤 Plugin posts response to /response endpoint
-5. ✅ MCP server resolves promise → AI receives data
+```mermaid
+sequenceDiagram
+    participant AI as 🤖 AI Assistant
+    participant MCP as 📡 MCP Server
+    participant HTTP as 🔗 HTTP Bridge
+    participant PLUGIN as 🎮 Studio Plugin
+    participant STUDIO as 🎯 Roblox Studio
+    
+    Note over AI,STUDIO: Tool Request Flow
+    
+    AI->>MCP: Call tool (e.g., get_file_tree)
+    MCP->>HTTP: Queue request with UUID
+    HTTP->>HTTP: Store in pending requests map
+    
+    Note over PLUGIN: Polling every 500ms
+    PLUGIN->>HTTP: GET /poll
+    HTTP->>PLUGIN: Return pending request + UUID
+    
+    PLUGIN->>STUDIO: Execute Studio APIs
+    Note over STUDIO: game.ServerStorage<br/>Selection:Get()<br/>Instance properties
+    STUDIO->>PLUGIN: Return Studio data
+    
+    PLUGIN->>HTTP: POST /response with UUID + data
+    HTTP->>MCP: Resolve promise with data
+    MCP->>AI: Return tool result
+    
+    Note over AI,STUDIO: Error Handling
+    
+    alt Request Timeout (30s)
+        HTTP->>MCP: Reject promise with timeout
+        MCP->>AI: Return error message
+    end
+    
+    alt Plugin Disconnected
+        PLUGIN->>HTTP: Connection lost
+        HTTP->>HTTP: Exponential backoff retry
+        Note over PLUGIN: Status: "Waiting for server..."
+    end
+```
 
 **Features:**
 - **🕐 30-second timeouts** with exponential backoff
