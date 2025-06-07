@@ -12,7 +12,7 @@ local toolbar = plugin:CreateToolbar("MCP Integration")
 local button = toolbar:CreateButton(
 	"MCP Server",
 	"Connect to MCP Server for AI Integration",
-	"rbxasset://textures/ui/GuiImagePlaceholder.png"
+	"rbxassetid://10734944444"
 )
 
 -- Plugin state
