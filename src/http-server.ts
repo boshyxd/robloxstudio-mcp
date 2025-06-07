@@ -5,6 +5,7 @@ import { BridgeService } from './bridge-service.js';
 
 export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService) {
   const app = express();
+  let pluginConnected = false;
 
   app.use(cors());
   app.use(express.json());
@@ -12,6 +13,17 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
   // Health check endpoint
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'robloxstudio-mcp' });
+  });
+
+  // Plugin readiness endpoint
+  app.post('/ready', (req, res) => {
+    pluginConnected = true;
+    res.json({ success: true });
+  });
+
+  // Check if plugin is connected
+  app.get('/status', (req, res) => {
+    res.json({ pluginConnected });
   });
 
   // Polling endpoint for Studio plugin
@@ -172,6 +184,9 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
+
+  // Add method to check if plugin is connected
+  (app as any).isPluginConnected = () => pluginConnected;
 
   return app;
 }

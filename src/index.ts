@@ -1,5 +1,21 @@
 #!/usr/bin/env node
 
+/**
+ * Roblox Studio MCP Server
+ * 
+ * This server provides Model Context Protocol (MCP) tools for interacting with Roblox Studio.
+ * It allows AI assistants to access Studio data, scripts, and objects through a bridge plugin.
+ * 
+ * Usage:
+ *   npx robloxstudio-mcp
+ * 
+ * Or add to your MCP configuration:
+ *   "robloxstudio": {
+ *     "command": "npx",
+ *     "args": ["-y", "robloxstudio-mcp"]
+ *   }
+ */
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -311,10 +327,22 @@ class RobloxStudioMCPServer {
 
   async run() {
     // Start HTTP server for Studio plugin communication
+    const port = process.env.ROBLOX_STUDIO_PORT ? parseInt(process.env.ROBLOX_STUDIO_PORT) : 3002;
     const httpServer = createHttpServer(this.tools, this.bridge);
-    httpServer.listen(3002, () => {
-      console.error('HTTP server listening on port 3002 for Studio plugin');
+    
+    await new Promise<void>((resolve) => {
+      httpServer.listen(port, () => {
+        console.error(`HTTP server listening on port ${port} for Studio plugin`);
+        resolve();
+      });
     });
+
+    // Wait for plugin to connect before starting MCP server
+    console.error('Waiting for Studio plugin to connect...');
+    while (!(httpServer as any).isPluginConnected()) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    console.error('Studio plugin connected!');
 
     // Start MCP server
     const transport = new StdioServerTransport();
