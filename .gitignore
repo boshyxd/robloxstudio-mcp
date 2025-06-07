@@ -21,8 +21,12 @@ dist/
 *.swp
 *.swo
 
-.CLAUDE.md
-.MCP_Server_Plan.md
+# Development files (keep local only)
+CLAUDE.md
+MCP_Server_Plan.md
+test-*.js
+example-*.json
+mcp.json
 
 # OS files
 .DS_Store

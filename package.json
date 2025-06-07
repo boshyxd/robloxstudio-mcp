@@ -10,8 +10,7 @@
   "files": [
     "dist/**/*",
     "studio-plugin/**/*",
-    "README.md",
-    "CLAUDE.md"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc",
