@@ -1,6 +1,6 @@
 # Roblox Studio MCP Server
 
-A powerful MCP (Model Context Protocol) server that gives AI assistants comprehensive access to Roblox Studio projects. Explore game architecture, analyze scripts, debug issues, and understand complex Roblox projects through 15 specialized AI tools.
+A powerful MCP (Model Context Protocol) server that gives AI assistants comprehensive access to Roblox Studio projects. Explore game architecture, analyze scripts, debug issues, and understand complex Roblox projects through 18 specialized AI tools including mass operations for bulk editing.
 
 ## ⚡ Quick Start (One Command)
 
@@ -64,11 +64,12 @@ graph TB
         STUDIO["🎯 Roblox Studio<br/>APIs & Data"]
     end
     
-    subgraph TOOLS ["🛠️ 15 AI Tools"]
-        FILE["📁 File System<br/>Trees, Content, Search"]
-        CONTEXT["🎯 Studio Context<br/>Services, Selection"]
-        PROPS["🔍 Properties<br/>Instances, Children"]
-        PROJECT["🏢 Project Analysis<br/>Structure, Dependencies"]
+    subgraph TOOLS ["🛠️ 18 AI Tools"]
+        FILE["📁 File System<br/>Trees, Search"]
+        CONTEXT["🎯 Studio Context<br/>Services, Objects"]
+        PROPS["🔍 Properties<br/>Get, Set, Mass Ops"]
+        CREATE["🏗️ Object Creation<br/>Single, Mass, Properties"]
+        PROJECT["🏢 Project Analysis<br/>Smart Structure"]
     end
     
     AI -->|stdio| MCP
@@ -85,6 +86,7 @@ graph TB
     MCP -.->|Exposes| FILE
     MCP -.->|Exposes| CONTEXT  
     MCP -.->|Exposes| PROPS
+    MCP -.->|Exposes| CREATE
     MCP -.->|Exposes| PROJECT
     
     classDef aiStyle fill:#1e40af,stroke:#3b82f6,stroke-width:2px,color:#ffffff
@@ -99,27 +101,24 @@ graph TB
     class HTTP,QUEUE httpStyle
     class PLUGIN pluginStyle
     class STUDIO studioStyle
-    class FILE,CONTEXT,PROPS,PROJECT toolStyle
+    class FILE,CONTEXT,PROPS,CREATE,PROJECT toolStyle
 ```
 
 ### **Key Components:**
-- **🧠 MCP Server** (Node.js/TypeScript) - Exposes 15 tools via stdio for AI integration
+- **🧠 MCP Server** (Node.js/TypeScript) - Exposes 18 tools via stdio for AI integration
 - **🔗 HTTP Bridge** - Request/response queue on localhost:3002 with 30s timeouts  
 - **🎮 Studio Plugin** (Luau) - Polls every 500ms, executes Studio API calls, handles errors
 - **📊 Smart Caching** - Efficient data transfer with intelligent response limiting
 
-## 🛠️ 15 Powerful AI Tools
+## 🛠️ 18 Powerful AI Tools
 
 ### 📁 **File System Tools**
 - **`get_file_tree`** - Complete project hierarchy with scripts, models, folders
-- **`get_file_content`** - Extract source code from any script
 - **`search_files`** - Find files by name, type, or content patterns  
-- **`get_file_properties`** - Script metadata, parent/child relationships
 
 ### 🎯 **Studio Context Tools**  
 - **`get_place_info`** - Place ID, name, game settings, workspace info
 - **`get_services`** - All Roblox services and their child counts
-- **`get_selection`** - Currently selected objects in Studio Explorer
 - **`search_objects`** - Find instances by name, class, or properties
 
 ### 🔍 **Instance & Property Tools**
@@ -128,25 +127,54 @@ graph TB
 - **`search_by_property`** - Find objects with specific property values
 - **`get_class_info`** - Available properties/methods for Roblox classes
 
+### ⚡ **Property Modification Tools** 
+- **`set_property`** - Set a property on any Roblox instance
+- **`mass_set_property`** - **🆕 NEW!** Set the same property on multiple instances at once
+- **`mass_get_property`** - **🆕 NEW!** Get the same property from multiple instances at once
+
+### 🏗️ **Object Creation Tools**
+- **`create_object`** - Create a new Roblox object instance (basic)
+- **`create_object_with_properties`** - **🆕 NEW!** Create objects with initial properties
+- **`mass_create_objects`** - **🆕 NEW!** Create multiple objects at once (basic)
+- **`mass_create_objects_with_properties`** - **🆕 NEW!** Create multiple objects with properties
+- **`delete_object`** - Delete a Roblox object instance
+
 ### 🏢 **Project Analysis Tools**
-- **`get_project_structure`** - **🆕 AI-Optimized!** Smart hierarchy with depth control
-- **`get_dependencies`** - Module dependency mapping and require() analysis  
-- **`validate_references`** - Find broken script references and missing modules
+- **`get_project_structure`** - **🔥 ENHANCED!** Smart hierarchy with improved depth control (recommended: depth 5-10)
+
+> **⚠️ Note:** Previous tools like `get_file_content`, `get_file_properties`, `get_selection`, `get_dependencies`, and `validate_references` have been removed. Use Rojo/Argon workflows or file system reading for better performance.
 
 ## 🧠 AI-Optimized Features
 
+### **🚀 Mass Operations (NEW in v1.3.0)**
+- **Bulk Property Editing**: Set the same property on hundreds of instances instantly
+- **Mass Object Creation**: Create complex object hierarchies with one call
+- **Batch Property Reading**: Get properties from multiple objects efficiently
+- **Atomic Operations**: All mass operations are grouped into single undo/redo waypoints
+
+**Example Use Cases:**
+```typescript
+// Set all parts in workspace to red
+mass_set_property(["game.Workspace.Part1", "game.Workspace.Part2"], "BrickColor", "Really red")
+
+// Create 10 parts with properties
+mass_create_objects_with_properties([
+  {className: "Part", parent: "game.Workspace", name: "RedPart", properties: {BrickColor: "Really red"}},
+  {className: "Part", parent: "game.Workspace", name: "BluePart", properties: {BrickColor: "Really blue"}}
+])
+```
+
 ### **Smart Project Structure** 
 - **Service Overview Mode**: Clean service list with child counts
-- **Path-based Exploration**: `get_project_structure("game.ServerStorage", maxDepth=3)`
+- **Path-based Exploration**: `get_project_structure("game.ServerStorage", maxDepth=5)`
 - **Script-only Filtering**: `scriptsOnly=true` for code analysis
 - **Intelligent Grouping**: Large folders auto-group by class type
-- **Progressive Discovery**: Depth limits prevent context bloat
+- **Enhanced Depth Control**: **Recommended maxDepth=5-10** for comprehensive exploration
 
 ### **Rich Metadata**
 - **Script Status**: Enabled/disabled, source detection, script types
 - **GUI Intelligence**: Text content, visibility, container vs interactive
-- **Dependency Mapping**: Complete require() call analysis
-- **Reference Validation**: 27+ issue types detected automatically
+- **Performance Optimized**: Removed redundant tools for faster operation
 
 ## 🚀 Development & Testing
 
@@ -249,6 +277,28 @@ get_instance_properties("game.StarterGui.MainMenu.SettingsFrame")
 - ✅ **Allow HTTP Requests** (Game Settings → Security)
 - 🌐 **HttpService.HttpEnabled = true**
 - 🔌 **Plugin activated** via toolbar button
+
+## 📋 Changelog
+
+### **v1.3.0** - Mass Operations Update (Latest)
+- ➕ **NEW**: `mass_set_property` - Bulk property modification
+- ➕ **NEW**: `mass_get_property` - Batch property reading  
+- ➕ **NEW**: `create_object_with_properties` - Object creation with initial properties
+- ➕ **NEW**: `mass_create_objects` - Bulk object creation
+- ➕ **NEW**: `mass_create_objects_with_properties` - Bulk creation with properties
+- 🔥 **ENHANCED**: `get_project_structure` with improved depth parameter documentation
+- 🗑️ **REMOVED**: `get_file_content`, `get_file_properties`, `get_selection`, `get_dependencies`, `validate_references` (use Rojo/Argon workflows instead)
+- ⚡ **PERFORMANCE**: Streamlined API with 18 focused tools vs 15 mixed-purpose tools
+
+### **v1.2.0** - Property Modification
+- ➕ Added `set_property` tool for instance modification
+- ➕ Added `create_object` and `delete_object` tools
+- 🔧 Enhanced error handling and validation
+
+### **v1.1.0** - Enhanced Discovery  
+- 🔍 Improved project structure analysis
+- 📊 Better metadata extraction
+- 🎯 Script and GUI intelligence
 
 ## 📄 License
 
