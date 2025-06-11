@@ -60,14 +60,6 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
     }
   });
 
-  app.post('/mcp/get_file_content', async (req, res) => {
-    try {
-      const result = await tools.getFileContent(req.body.path);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
   app.post('/mcp/search_files', async (req, res) => {
     try {
@@ -78,14 +70,6 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
     }
   });
 
-  app.post('/mcp/get_file_properties', async (req, res) => {
-    try {
-      const result = await tools.getFileProperties(req.body.path);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
   app.post('/mcp/get_place_info', async (req, res) => {
     try {
@@ -105,14 +89,6 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
     }
   });
 
-  app.post('/mcp/get_selection', async (req, res) => {
-    try {
-      const result = await tools.getSelection();
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
   app.post('/mcp/search_objects', async (req, res) => {
     try {
@@ -159,32 +135,61 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
     }
   });
 
+  app.post('/mcp/mass_set_property', async (req, res) => {
+    try {
+      const result = await tools.massSetProperty(req.body.paths, req.body.propertyName, req.body.propertyValue);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post('/mcp/mass_get_property', async (req, res) => {
+    try {
+      const result = await tools.massGetProperty(req.body.paths, req.body.propertyName);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post('/mcp/create_object_with_properties', async (req, res) => {
+    try {
+      const result = await tools.createObjectWithProperties(req.body.className, req.body.parent, req.body.name, req.body.properties);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post('/mcp/mass_create_objects', async (req, res) => {
+    try {
+      const result = await tools.massCreateObjects(req.body.objects);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post('/mcp/mass_create_objects_with_properties', async (req, res) => {
+    try {
+      const result = await tools.massCreateObjectsWithProperties(req.body.objects);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   app.post('/mcp/get_project_structure', async (req, res) => {
     try {
-      const result = await tools.getProjectStructure();
+      const result = await tools.getProjectStructure(req.body.path, req.body.maxDepth, req.body.scriptsOnly);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  app.post('/mcp/get_dependencies', async (req, res) => {
-    try {
-      const result = await tools.getDependencies(req.body.modulePath);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
-  app.post('/mcp/validate_references', async (req, res) => {
-    try {
-      const result = await tools.validateReferences();
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
 
   // Add method to check if plugin is connected
   (app as any).isPluginConnected = () => pluginConnected;

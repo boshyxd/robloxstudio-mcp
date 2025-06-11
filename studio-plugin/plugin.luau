@@ -259,18 +259,12 @@ processRequest = function(request)
 
 	if endpoint == "/api/file-tree" then
 		return handlers.getFileTree(data)
-	elseif endpoint == "/api/file-content" then
-		return handlers.getFileContent(data)
 	elseif endpoint == "/api/search-files" then
 		return handlers.searchFiles(data)
-	elseif endpoint == "/api/file-properties" then
-		return handlers.getFileProperties(data)
 	elseif endpoint == "/api/place-info" then
 		return handlers.getPlaceInfo(data)
 	elseif endpoint == "/api/services" then
 		return handlers.getServices(data)
-	elseif endpoint == "/api/selection" then
-		return handlers.getSelection(data)
 	elseif endpoint == "/api/search-objects" then
 		return handlers.searchObjects(data)
 	elseif endpoint == "/api/instance-properties" then
@@ -283,14 +277,18 @@ processRequest = function(request)
 		return handlers.getClassInfo(data)
 	elseif endpoint == "/api/project-structure" then
 		return handlers.getProjectStructure(data)
-	elseif endpoint == "/api/dependencies" then
-		return handlers.getDependencies(data)
-	elseif endpoint == "/api/validate-references" then
-		return handlers.validateReferences(data)
 	elseif endpoint == "/api/set-property" then
 		return handlers.setProperty(data)
+	elseif endpoint == "/api/mass-set-property" then
+		return handlers.massSetProperty(data)
+	elseif endpoint == "/api/mass-get-property" then
+		return handlers.massGetProperty(data)
 	elseif endpoint == "/api/create-object" then
 		return handlers.createObject(data)
+	elseif endpoint == "/api/mass-create-objects" then
+		return handlers.massCreateObjects(data)
+	elseif endpoint == "/api/mass-create-objects-with-properties" then
+		return handlers.massCreateObjectsWithProperties(data)
 	elseif endpoint == "/api/delete-object" then
 		return handlers.deleteObject(data)
 	else
@@ -359,29 +357,6 @@ handlers.getFileTree = function(requestData)
 	}
 end
 
-handlers.getFileContent = function(requestData)
-	local path = requestData.path
-	if not path then
-		return { error = "Path is required" }
-	end
-
-	local instance = getInstanceByPath(path)
-	if not instance then
-		return { error = "Instance not found: " .. path }
-	end
-
-	if not instance:IsA("BaseScript") then
-		return { error = "Instance is not a script: " .. path }
-	end
-
-	return {
-		path = path,
-		source = instance.Source,
-		className = instance.ClassName,
-		name = instance.Name,
-	}
-end
-
 handlers.searchFiles = function(requestData)
 	local query = requestData.query
 	local searchType = requestData.searchType or "name"
@@ -425,43 +400,6 @@ handlers.searchFiles = function(requestData)
 		searchType = searchType,
 		count = #results,
 	}
-end
-
-handlers.getFileProperties = function(requestData)
-	local path = requestData.path
-	if not path then
-		return { error = "Path is required" }
-	end
-
-	local instance = getInstanceByPath(path)
-	if not instance then
-		return { error = "Instance not found: " .. path }
-	end
-
-	local properties = {}
-	local success, result = pcall(function()
-		properties.Name = instance.Name
-		properties.ClassName = instance.ClassName
-		properties.Parent = instance.Parent and getInstancePath(instance.Parent) or "nil"
-
-		properties.ChildCount = #instance:GetChildren()
-
-		if instance:IsA("BaseScript") then
-			properties.Source = instance.Source
-			properties.Enabled = instance.Enabled
-		end
-
-		return properties
-	end)
-
-	if success then
-		return {
-			path = path,
-			properties = properties,
-		}
-	else
-		return { error = "Failed to get properties: " .. tostring(result) }
-	end
 end
 
 handlers.getPlaceInfo = function(requestData)
@@ -524,24 +462,6 @@ handlers.getServices = function(requestData)
 
 		return { services = services }
 	end
-end
-
-handlers.getSelection = function(requestData)
-	local selected = Selection:Get()
-	local selection = {}
-
-	for _, instance in ipairs(selected) do
-		table.insert(selection, {
-			name = instance.Name,
-			className = instance.ClassName,
-			path = getInstancePath(instance),
-		})
-	end
-
-	return {
-		selection = selection,
-		count = #selection,
-	}
 end
 
 handlers.searchObjects = function(requestData)
@@ -1001,144 +921,6 @@ handlers.getProjectStructure = function(requestData)
 	return result
 end
 
-handlers.getDependencies = function(requestData)
-	local modulePath = requestData.modulePath
-	local dependencies = {
-		requires = {},
-		requiredBy = {},
-		timestamp = tick(),
-	}
-
-	local function findRequires(instance)
-		if instance:IsA("BaseScript") and instance.Source then
-			local requires = {}
-			for match in instance.Source:gmatch("require%s*%(([^)]+)%)") do
-				local cleanMatch = match:gsub("%s+", "")
-				table.insert(requires, cleanMatch)
-			end
-			return requires
-		end
-		return {}
-	end
-
-	local function searchAllScripts()
-		local allRequires = {}
-
-		local function searchRecursive(instance)
-			if instance:IsA("BaseScript") then
-				local requires = findRequires(instance)
-				if #requires > 0 then
-					allRequires[getInstancePath(instance)] = requires
-				end
-			end
-
-			for _, child in ipairs(instance:GetChildren()) do
-				searchRecursive(child)
-			end
-		end
-
-		searchRecursive(game)
-		return allRequires
-	end
-
-	if modulePath then
-		local instance = getInstanceByPath(modulePath)
-		if instance and instance:IsA("BaseScript") then
-			dependencies.requires = findRequires(instance)
-		end
-	end
-
-	local allRequires = searchAllScripts()
-	dependencies.allRequires = allRequires
-
-	return dependencies
-end
-
-handlers.validateReferences = function(requestData)
-	local issues = {}
-	local stats = {
-		totalScripts = 0,
-		scriptsWithIssues = 0,
-		totalIssues = 0,
-	}
-
-	local function validateScript(instance)
-		if not instance:IsA("BaseScript") or not instance.Source then
-			return
-		end
-
-		stats.totalScripts = stats.totalScripts + 1
-		local scriptIssues = {}
-
-		for match in instance.Source:gmatch("require%s*%(([^)]+)%)") do
-			local requirePath = match:gsub("%s+", ""):gsub('"', ""):gsub("'", "")
-
-			local success, result = pcall(function()
-				if requirePath:match("^game%.") then
-					return getInstanceByPath(requirePath)
-				end
-				return nil
-			end)
-
-			if not success or not result then
-				table.insert(scriptIssues, {
-					type = "broken_require",
-					line = "unknown",
-					message = "Cannot resolve require: " .. requirePath,
-					requirePath = requirePath,
-				})
-			end
-		end
-
-		local commonServices = {
-			"Workspace",
-			"Players",
-			"ReplicatedStorage",
-			"ServerStorage",
-			"ServerScriptService",
-			"StarterGui",
-			"HttpService",
-			"TeleportService",
-		}
-
-		for _, serviceName in ipairs(commonServices) do
-			if
-				instance.Source:find(serviceName .. "Service")
-				and serviceName ~= "HttpService"
-				and serviceName ~= "TeleportService"
-			then
-				table.insert(scriptIssues, {
-					type = "potential_typo",
-					line = "unknown",
-					message = "Potential typo: " .. serviceName .. "Service should be " .. serviceName,
-					suggestion = serviceName,
-				})
-			end
-		end
-
-		if #scriptIssues > 0 then
-			stats.scriptsWithIssues = stats.scriptsWithIssues + 1
-			stats.totalIssues = stats.totalIssues + #scriptIssues
-			issues[getInstancePath(instance)] = scriptIssues
-		end
-	end
-
-	local function validateRecursive(instance)
-		validateScript(instance)
-		for _, child in ipairs(instance:GetChildren()) do
-			validateRecursive(child)
-		end
-	end
-
-	validateRecursive(game)
-
-	return {
-		issues = issues,
-		stats = stats,
-		timestamp = tick(),
-	}
-end
-
 handlers.setProperty = function(requestData)
 	local instancePath = requestData.instancePath
 	local propertyName = requestData.propertyName
@@ -1303,6 +1085,277 @@ handlers.deleteObject = function(requestData)
 			instancePath = instancePath,
 		}
 	end
+end
+
+handlers.massSetProperty = function(requestData)
+	local paths = requestData.paths
+	local propertyName = requestData.propertyName
+	local propertyValue = requestData.propertyValue
+
+	if not paths or type(paths) ~= "table" or #paths == 0 or not propertyName then
+		return { error = "Paths array and property name are required" }
+	end
+
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+
+	for _, path in ipairs(paths) do
+		local instance = getInstanceByPath(path)
+		if instance then
+			local success, err = pcall(function()
+				instance[propertyName] = propertyValue
+			end)
+			
+			if success then
+				successCount = successCount + 1
+				table.insert(results, {
+					path = path,
+					success = true,
+					propertyName = propertyName,
+					propertyValue = propertyValue
+				})
+			else
+				failureCount = failureCount + 1
+				table.insert(results, {
+					path = path,
+					success = false,
+					error = tostring(err)
+				})
+			end
+		else
+			failureCount = failureCount + 1
+			table.insert(results, {
+				path = path,
+				success = false,
+				error = "Instance not found"
+			})
+		end
+	end
+
+	if successCount > 0 then
+		ChangeHistoryService:SetWaypoint("Mass set " .. propertyName .. " property")
+	end
+
+	return {
+		results = results,
+		summary = {
+			total = #paths,
+			succeeded = successCount,
+			failed = failureCount
+		}
+	}
+end
+
+handlers.massGetProperty = function(requestData)
+	local paths = requestData.paths
+	local propertyName = requestData.propertyName
+
+	if not paths or type(paths) ~= "table" or #paths == 0 or not propertyName then
+		return { error = "Paths array and property name are required" }
+	end
+
+	local results = {}
+
+	for _, path in ipairs(paths) do
+		local instance = getInstanceByPath(path)
+		if instance then
+			local success, value = pcall(function()
+				return instance[propertyName]
+			end)
+			
+			if success then
+				table.insert(results, {
+					path = path,
+					success = true,
+					propertyName = propertyName,
+					propertyValue = value
+				})
+			else
+				table.insert(results, {
+					path = path,
+					success = false,
+					error = tostring(value)
+				})
+			end
+		else
+			table.insert(results, {
+				path = path,
+				success = false,
+				error = "Instance not found"
+			})
+		end
+	end
+
+	return {
+		results = results,
+		propertyName = propertyName
+	}
+end
+
+handlers.massCreateObjects = function(requestData)
+	local objects = requestData.objects
+
+	if not objects or type(objects) ~= "table" or #objects == 0 then
+		return { error = "Objects array is required" }
+	end
+
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+
+	for _, objData in ipairs(objects) do
+		local className = objData.className
+		local parentPath = objData.parent
+		local name = objData.name
+
+		if className and parentPath then
+			local parentInstance = getInstanceByPath(parentPath)
+			if parentInstance then
+				local success, newInstance = pcall(function()
+					local instance = Instance.new(className)
+					if name then
+						instance.Name = name
+					end
+					instance.Parent = parentInstance
+					return instance
+				end)
+
+				if success and newInstance then
+					successCount = successCount + 1
+					table.insert(results, {
+						success = true,
+						className = className,
+						parent = parentPath,
+						instancePath = getInstancePath(newInstance),
+						name = newInstance.Name
+					})
+				else
+					failureCount = failureCount + 1
+					table.insert(results, {
+						success = false,
+						className = className,
+						parent = parentPath,
+						error = tostring(newInstance)
+					})
+				end
+			else
+				failureCount = failureCount + 1
+				table.insert(results, {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = "Parent instance not found"
+				})
+			end
+		else
+			failureCount = failureCount + 1
+			table.insert(results, {
+				success = false,
+				error = "Class name and parent are required"
+			})
+		end
+	end
+
+	if successCount > 0 then
+		ChangeHistoryService:SetWaypoint("Mass create objects")
+	end
+
+	return {
+		results = results,
+		summary = {
+			total = #objects,
+			succeeded = successCount,
+			failed = failureCount
+		}
+	}
+end
+
+handlers.massCreateObjectsWithProperties = function(requestData)
+	local objects = requestData.objects
+
+	if not objects or type(objects) ~= "table" or #objects == 0 then
+		return { error = "Objects array is required" }
+	end
+
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+
+	for _, objData in ipairs(objects) do
+		local className = objData.className
+		local parentPath = objData.parent
+		local name = objData.name
+		local properties = objData.properties or {}
+
+		if className and parentPath then
+			local parentInstance = getInstanceByPath(parentPath)
+			if parentInstance then
+				local success, newInstance = pcall(function()
+					local instance = Instance.new(className)
+					
+					if name then
+						instance.Name = name
+					end
+
+					for propertyName, propertyValue in pairs(properties) do
+						pcall(function()
+							instance[propertyName] = propertyValue
+						end)
+					end
+
+					instance.Parent = parentInstance
+					return instance
+				end)
+
+				if success and newInstance then
+					successCount = successCount + 1
+					table.insert(results, {
+						success = true,
+						className = className,
+						parent = parentPath,
+						instancePath = getInstancePath(newInstance),
+						name = newInstance.Name
+					})
+				else
+					failureCount = failureCount + 1
+					table.insert(results, {
+						success = false,
+						className = className,
+						parent = parentPath,
+						error = tostring(newInstance)
+					})
+				end
+			else
+				failureCount = failureCount + 1
+				table.insert(results, {
+					success = false,
+					className = className,
+					parent = parentPath,
+					error = "Parent instance not found"
+				})
+			end
+		else
+			failureCount = failureCount + 1
+			table.insert(results, {
+				success = false,
+				error = "Class name and parent are required"
+			})
+		end
+	end
+
+	if successCount > 0 then
+		ChangeHistoryService:SetWaypoint("Mass create objects with properties")
+	end
+
+	return {
+		results = results,
+		summary = {
+			total = #objects,
+			succeeded = successCount,
+			failed = failureCount
+		}
+	}
 end
 
 local function updateUIState()
