@@ -297,4 +297,117 @@ export class RobloxStudioTools {
       ]
     };
   }
+
+  // Smart Duplication Tools
+  async smartDuplicate(
+    instancePath: string, 
+    count: number, 
+    options?: {
+      namePattern?: string; // e.g., "Button{n}" where {n} is replaced with index
+      positionOffset?: [number, number, number]; // X, Y, Z offset per duplicate
+      rotationOffset?: [number, number, number]; // X, Y, Z rotation offset per duplicate
+      scaleOffset?: [number, number, number]; // X, Y, Z scale multiplier per duplicate
+      propertyVariations?: Record<string, any[]>; // Property name to array of values
+      targetParents?: string[]; // Different parent for each duplicate
+    }
+  ) {
+    if (!instancePath || count < 1) {
+      throw new Error('Instance path and count > 0 are required for smart_duplicate');
+    }
+    const response = await this.client.request('/api/smart-duplicate', { 
+      instancePath, 
+      count, 
+      options 
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  async massDuplicate(
+    duplications: Array<{
+      instancePath: string;
+      count: number;
+      options?: {
+        namePattern?: string;
+        positionOffset?: [number, number, number];
+        rotationOffset?: [number, number, number];
+        scaleOffset?: [number, number, number];
+        propertyVariations?: Record<string, any[]>;
+        targetParents?: string[];
+      }
+    }>
+  ) {
+    if (!duplications || duplications.length === 0) {
+      throw new Error('Duplications array is required for mass_duplicate');
+    }
+    const response = await this.client.request('/api/mass-duplicate', { duplications });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  // Calculated Property Tools
+  async setCalculatedProperty(
+    paths: string[], 
+    propertyName: string, 
+    formula: string,
+    variables?: Record<string, any>
+  ) {
+    if (!paths || paths.length === 0 || !propertyName || !formula) {
+      throw new Error('Paths, property name, and formula are required for set_calculated_property');
+    }
+    const response = await this.client.request('/api/set-calculated-property', { 
+      paths, 
+      propertyName, 
+      formula,
+      variables
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  // Relative Property Tools
+  async setRelativeProperty(
+    paths: string[], 
+    propertyName: string, 
+    operation: 'add' | 'multiply' | 'divide' | 'subtract' | 'power',
+    value: any,
+    component?: 'X' | 'Y' | 'Z' // For Vector3/UDim2 properties
+  ) {
+    if (!paths || paths.length === 0 || !propertyName || !operation || value === undefined) {
+      throw new Error('Paths, property name, operation, and value are required for set_relative_property');
+    }
+    const response = await this.client.request('/api/set-relative-property', { 
+      paths, 
+      propertyName, 
+      operation,
+      value,
+      component
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
 }

@@ -37,7 +37,7 @@ class RobloxStudioMCPServer {
     this.server = new Server(
       {
         name: 'robloxstudio-mcp',
-        version: '1.0.0',
+        version: '1.4.0',
       },
       {
         capabilities: {
@@ -415,6 +415,192 @@ class RobloxStudioMCPServer {
               },
               required: ['instancePath']
             }
+          },
+          // Smart Duplication Tools
+          {
+            name: 'smart_duplicate',
+            description: 'Smart duplication with automatic naming, positioning, and property variations',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                instancePath: {
+                  type: 'string',
+                  description: 'Path to the instance to duplicate'
+                },
+                count: {
+                  type: 'number',
+                  description: 'Number of duplicates to create'
+                },
+                options: {
+                  type: 'object',
+                  properties: {
+                    namePattern: {
+                      type: 'string',
+                      description: 'Name pattern with {n} placeholder (e.g., "Button{n}")'
+                    },
+                    positionOffset: {
+                      type: 'array',
+                      items: { type: 'number' },
+                      minItems: 3,
+                      maxItems: 3,
+                      description: 'X, Y, Z offset per duplicate'
+                    },
+                    rotationOffset: {
+                      type: 'array',
+                      items: { type: 'number' },
+                      minItems: 3,
+                      maxItems: 3,
+                      description: 'X, Y, Z rotation offset per duplicate'
+                    },
+                    scaleOffset: {
+                      type: 'array',
+                      items: { type: 'number' },
+                      minItems: 3,
+                      maxItems: 3,
+                      description: 'X, Y, Z scale multiplier per duplicate'
+                    },
+                    propertyVariations: {
+                      type: 'object',
+                      description: 'Property name to array of values'
+                    },
+                    targetParents: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Different parent for each duplicate'
+                    }
+                  }
+                }
+              },
+              required: ['instancePath', 'count']
+            }
+          },
+          {
+            name: 'mass_duplicate',
+            description: 'Perform multiple smart duplications at once',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                duplications: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      instancePath: {
+                        type: 'string',
+                        description: 'Path to the instance to duplicate'
+                      },
+                      count: {
+                        type: 'number',
+                        description: 'Number of duplicates to create'
+                      },
+                      options: {
+                        type: 'object',
+                        properties: {
+                          namePattern: {
+                            type: 'string',
+                            description: 'Name pattern with {n} placeholder'
+                          },
+                          positionOffset: {
+                            type: 'array',
+                            items: { type: 'number' },
+                            minItems: 3,
+                            maxItems: 3,
+                            description: 'X, Y, Z offset per duplicate'
+                          },
+                          rotationOffset: {
+                            type: 'array',
+                            items: { type: 'number' },
+                            minItems: 3,
+                            maxItems: 3,
+                            description: 'X, Y, Z rotation offset per duplicate'
+                          },
+                          scaleOffset: {
+                            type: 'array',
+                            items: { type: 'number' },
+                            minItems: 3,
+                            maxItems: 3,
+                            description: 'X, Y, Z scale multiplier per duplicate'
+                          },
+                          propertyVariations: {
+                            type: 'object',
+                            description: 'Property name to array of values'
+                          },
+                          targetParents: {
+                            type: 'array',
+                            items: { type: 'string' },
+                            description: 'Different parent for each duplicate'
+                          }
+                        }
+                      }
+                    },
+                    required: ['instancePath', 'count']
+                  },
+                  description: 'Array of duplication operations'
+                }
+              },
+              required: ['duplications']
+            }
+          },
+          // Calculated Property Tools
+          {
+            name: 'set_calculated_property',
+            description: 'Set properties using mathematical formulas and variables',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                paths: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Array of instance paths to modify'
+                },
+                propertyName: {
+                  type: 'string',
+                  description: 'Name of the property to set'
+                },
+                formula: {
+                  type: 'string',
+                  description: 'Mathematical formula (e.g., "Position.magnitude * 2", "index * 50")'
+                },
+                variables: {
+                  type: 'object',
+                  description: 'Additional variables for the formula'
+                }
+              },
+              required: ['paths', 'propertyName', 'formula']
+            }
+          },
+          // Relative Property Tools
+          {
+            name: 'set_relative_property',
+            description: 'Modify properties relative to their current values',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                paths: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Array of instance paths to modify'
+                },
+                propertyName: {
+                  type: 'string',
+                  description: 'Name of the property to modify'
+                },
+                operation: {
+                  type: 'string',
+                  enum: ['add', 'multiply', 'divide', 'subtract', 'power'],
+                  description: 'Mathematical operation to perform'
+                },
+                value: {
+                  description: 'Value to use in the operation'
+                },
+                component: {
+                  type: 'string',
+                  enum: ['X', 'Y', 'Z'],
+                  description: 'Specific component for Vector3/UDim2 properties'
+                }
+              },
+              required: ['paths', 'propertyName', 'operation', 'value']
+            }
           }
         ]
       };
@@ -474,6 +660,20 @@ class RobloxStudioMCPServer {
             return await this.tools.massCreateObjectsWithProperties((args as any)?.objects);
           case 'delete_object':
             return await this.tools.deleteObject((args as any)?.instancePath as string);
+          
+          // Smart Duplication Tools
+          case 'smart_duplicate':
+            return await this.tools.smartDuplicate((args as any)?.instancePath as string, (args as any)?.count as number, (args as any)?.options);
+          case 'mass_duplicate':
+            return await this.tools.massDuplicate((args as any)?.duplications);
+          
+          // Calculated Property Tools
+          case 'set_calculated_property':
+            return await this.tools.setCalculatedProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.formula as string, (args as any)?.variables);
+          
+          // Relative Property Tools
+          case 'set_relative_property':
+            return await this.tools.setRelativeProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.operation, (args as any)?.value, (args as any)?.component);
 
           default:
             throw new McpError(
