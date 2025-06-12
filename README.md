@@ -2,6 +2,10 @@
 
 A powerful MCP (Model Context Protocol) server that gives AI assistants comprehensive access to Roblox Studio projects. Explore game architecture, analyze scripts, debug issues, and understand complex Roblox projects through 18 specialized AI tools including mass operations for bulk editing.
 
+<a href="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp/badge" alt="Roblox Studio Server MCP server" />
+</a>
+
 ## ⚡ Quick Start (One Command)
 
 **For Claude Code users:**
