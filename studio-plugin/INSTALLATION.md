@@ -92,7 +92,7 @@ If you encounter issues, you may need to run it through `cmd`. Update your confi
 4. **📤 Plugin responds** with extracted data
 5. **✅ AI receives** comprehensive Studio information
 
-**Available Tools:** 15 specialized tools for file trees, dependencies, properties, project structure, and more!
+**Available Tools:** 40 specialized tools for file trees, properties, scripts, assets, and object creation!
 
 ## 🔧 Troubleshooting
 
@@ -119,7 +119,7 @@ If you encounter issues, you may need to run it through `cmd`. Update your confi
 
 - 🏠 **Local-only**: All communication stays on your machine
 - 🚫 **No external servers**: Plugin only talks to localhost
-- 👁️ **Read-only access**: Plugin extracts data but never modifies your place
+- 👁️ **Full Studio access**: Plugin can read and modify your project via AI commands
 - 🔐 **No data collection**: Your projects remain private
 
 ## 🛠️ Advanced Usage
