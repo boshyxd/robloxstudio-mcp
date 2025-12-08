@@ -27,11 +27,13 @@ import {
 import { createHttpServer } from './http-server.js';
 import { RobloxStudioTools } from './tools/index.js';
 import { BridgeService } from './bridge-service.js';
+import { OpenCloudClient } from './opencloud-client.js';
 
 class RobloxStudioMCPServer {
   private server: Server;
   private tools: RobloxStudioTools;
   private bridge: BridgeService;
+  private openCloud: OpenCloudClient;
 
   constructor() {
     this.server = new Server(
@@ -48,6 +50,7 @@ class RobloxStudioMCPServer {
 
     this.bridge = new BridgeService();
     this.tools = new RobloxStudioTools(this.bridge);
+    this.openCloud = new OpenCloudClient();
     this.setupToolHandlers();
   }
 
@@ -855,7 +858,61 @@ class RobloxStudioMCPServer {
               },
               required: ['tagName']
             }
-          }
+          },
+          {
+            name: 'insert_asset',
+            description: 'Insert a Creator Store asset into the scene by ID. Use when you have an assetId and want to add it to the game. Supports positioning and undo/redo.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                assetId: {
+                  type: 'number',
+                  description: 'The asset ID to insert'
+                },
+                parentPath: {
+                  type: 'string',
+                  description: 'Path to the parent instance (default: game.Workspace)',
+                  default: 'game.Workspace'
+                },
+                position: {
+                  type: 'object',
+                  properties: {
+                    x: { type: 'number' },
+                    y: { type: 'number' },
+                    z: { type: 'number' }
+                  },
+                  description: 'Optional position for the inserted asset'
+                }
+              },
+              required: ['assetId']
+            }
+          },
+          {
+            name: 'preview_asset',
+            description: 'Inspect an asset\'s internal structure without inserting. Use when you need to see what parts, scripts, or properties an asset contains before adding it to your scene. Returns full hierarchy then auto-cleans up.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                assetId: {
+                  type: 'number',
+                  description: 'The asset ID to preview'
+                },
+                includeProperties: {
+                  type: 'boolean',
+                  description: 'Include detailed properties for each instance (default: true)',
+                  default: true
+                },
+                maxDepth: {
+                  type: 'number',
+                  description: 'Maximum hierarchy depth to traverse (default: 10)',
+                  default: 10
+                }
+              },
+              required: ['assetId']
+            }
+          },
+          // Open Cloud tools are conditionally added below
+          ...(this.openCloud.hasApiKey() ? this.getOpenCloudTools() : [])
         ]
       };
     });
@@ -870,7 +927,7 @@ class RobloxStudioMCPServer {
             return await this.tools.getFileTree((args as any)?.path || '');
           case 'search_files':
             return await this.tools.searchFiles((args as any)?.query as string, (args as any)?.searchType || 'name');
-          
+
           // Studio Context Tools
           case 'get_place_info':
             return await this.tools.getPlaceInfo();
@@ -878,7 +935,7 @@ class RobloxStudioMCPServer {
             return await this.tools.getServices((args as any)?.serviceName);
           case 'search_objects':
             return await this.tools.searchObjects((args as any)?.query as string, (args as any)?.searchType || 'name', (args as any)?.propertyName);
-          
+
           // Property & Instance Tools
           case 'get_instance_properties':
             return await this.tools.getInstanceProperties((args as any)?.instancePath as string);
@@ -888,21 +945,21 @@ class RobloxStudioMCPServer {
             return await this.tools.searchByProperty((args as any)?.propertyName as string, (args as any)?.propertyValue as string);
           case 'get_class_info':
             return await this.tools.getClassInfo((args as any)?.className as string);
-          
+
           // Project Tools
           case 'get_project_structure':
             return await this.tools.getProjectStructure((args as any)?.path, (args as any)?.maxDepth, (args as any)?.scriptsOnly);
-          
+
           // Property Modification Tools
           case 'set_property':
             return await this.tools.setProperty((args as any)?.instancePath as string, (args as any)?.propertyName as string, (args as any)?.propertyValue);
-          
+
           // Mass Property Tools
           case 'mass_set_property':
             return await this.tools.massSetProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.propertyValue);
           case 'mass_get_property':
             return await this.tools.massGetProperty((args as any)?.paths as string[], (args as any)?.propertyName as string);
-          
+
           // Object Creation/Deletion Tools
           case 'create_object':
             return await this.tools.createObject((args as any)?.className as string, (args as any)?.parent as string, (args as any)?.name);
@@ -914,21 +971,21 @@ class RobloxStudioMCPServer {
             return await this.tools.massCreateObjectsWithProperties((args as any)?.objects);
           case 'delete_object':
             return await this.tools.deleteObject((args as any)?.instancePath as string);
-          
+
           // Smart Duplication Tools
           case 'smart_duplicate':
             return await this.tools.smartDuplicate((args as any)?.instancePath as string, (args as any)?.count as number, (args as any)?.options);
           case 'mass_duplicate':
             return await this.tools.massDuplicate((args as any)?.duplications);
-          
+
           // Calculated Property Tools
           case 'set_calculated_property':
             return await this.tools.setCalculatedProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.formula as string, (args as any)?.variables);
-          
+
           // Relative Property Tools
           case 'set_relative_property':
             return await this.tools.setRelativeProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.operation, (args as any)?.value, (args as any)?.component);
-          
+
           // Script Management Tools
           case 'get_script_source':
             return await this.tools.getScriptSource((args as any)?.instancePath as string, (args as any)?.startLine, (args as any)?.endLine);
@@ -963,6 +1020,18 @@ class RobloxStudioMCPServer {
           case 'get_tagged':
             return await this.tools.getTagged((args as any)?.tagName as string);
 
+          // Asset Tools (Open Cloud)
+          case 'search_assets':
+            return await this.searchAssets(args as any);
+          case 'get_asset_details':
+            return await this.getAssetDetails((args as any)?.assetId as number);
+          case 'get_asset_thumbnail':
+            return await this.getAssetThumbnail((args as any)?.assetId as number, (args as any)?.size);
+          case 'insert_asset':
+            return await this.insertAsset((args as any)?.assetId as number, (args as any)?.parentPath, (args as any)?.position);
+          case 'preview_asset':
+            return await this.previewAsset((args as any)?.assetId as number, (args as any)?.includeProperties, (args as any)?.maxDepth);
+
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -978,11 +1047,279 @@ class RobloxStudioMCPServer {
     });
   }
 
+  // Returns Open Cloud-dependent tool definitions (only shown when API key is configured)
+  private getOpenCloudTools() {
+    return [
+      {
+        name: 'search_assets',
+        description: 'Search the Roblox Creator Store/Toolbox by type and keywords. Returns asset IDs, names, creators, and thumbnail URLs. Use the returned assetId with get_asset_details, get_asset_thumbnail, preview_asset, or insert_asset. Recommended workflow: search → thumbnail → preview → insert.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            assetType: {
+              type: 'string',
+              enum: ['Model', 'Decal', 'Audio', 'MeshPart', 'Plugin', 'Video', 'FontFamily'],
+              description: 'Type of asset to search for'
+            },
+            query: {
+              type: 'string',
+              description: 'Search query terms'
+            },
+            maxResults: {
+              type: 'number',
+              description: 'Maximum number of results (default 25, max 100)',
+              default: 25
+            },
+            sortBy: {
+              type: 'string',
+              enum: ['Relevance', 'Trending', 'Top', 'CreateTime', 'UpdatedTime', 'Ratings'],
+              description: 'How to sort results',
+              default: 'Relevance'
+            },
+            verifiedCreatorsOnly: {
+              type: 'boolean',
+              description: 'Only show assets from verified creators',
+              default: true
+            }
+          },
+          required: ['assetType']
+        }
+      },
+      {
+        name: 'get_asset_details',
+        description: 'Get marketplace metadata (creator, votes, triangle count). Use when evaluating asset quality or complexity. Does not show internal hierarchy—use preview_asset for that.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            assetId: {
+              type: 'number',
+              description: 'The asset ID to retrieve details for'
+            }
+          },
+          required: ['assetId']
+        }
+      },
+      {
+        name: 'get_asset_thumbnail',
+        description: 'Get visual preview image of an asset. Use when you need to see what an asset looks like. Returns base64 PNG visible to vision LLMs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            assetId: {
+              type: 'number',
+              description: 'The asset ID to get thumbnail for'
+            },
+            size: {
+              type: 'string',
+              enum: ['150x150', '420x420', '768x432'],
+              description: 'Thumbnail size',
+              default: '420x420'
+            }
+          },
+          required: ['assetId']
+        }
+      }
+    ];
+  }
+
+  // Asset Tool Implementations
+  private async searchAssets(args: {
+    assetType: 'Model' | 'Decal' | 'Audio' | 'MeshPart' | 'Plugin' | 'Video' | 'FontFamily';
+    query?: string;
+    maxResults?: number;
+    sortBy?: 'Relevance' | 'Trending' | 'Top' | 'CreateTime' | 'UpdatedTime' | 'Ratings';
+    verifiedCreatorsOnly?: boolean;
+  }) {
+    if (!this.openCloud.hasApiKey()) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Open Cloud API key not configured',
+              hint: 'Set ROBLOX_OPEN_CLOUD_API_KEY environment variable'
+            }, null, 2)
+          }
+        ]
+      };
+    }
+
+    try {
+      const result = await this.openCloud.searchAssets({
+        searchCategoryType: args.assetType,
+        query: args.query,
+        maxPageSize: args.maxResults || 25,
+        sortCategory: args.sortBy,
+        includeOnlyVerifiedCreators: args.verifiedCreatorsOnly ?? true
+      });
+
+      // Get thumbnails for all returned assets
+      const assetIds = result.creatorStoreAssets
+        .map(a => a.asset?.id)
+        .filter((id): id is number => id !== undefined);
+
+      const thumbnails = await this.openCloud.getAssetThumbnails(assetIds);
+
+      // Enrich results with thumbnail URLs
+      const enrichedAssets = result.creatorStoreAssets.map(asset => ({
+        ...asset,
+        thumbnailUrl: asset.asset?.id ? thumbnails.get(asset.asset.id) : undefined
+      }));
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              totalResults: result.totalResults,
+              assets: enrichedAssets,
+              nextPageToken: result.nextPageToken
+            }, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }
+        ]
+      };
+    }
+  }
+
+  private async getAssetDetails(assetId: number) {
+    if (!this.openCloud.hasApiKey()) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Open Cloud API key not configured',
+              hint: 'Set ROBLOX_OPEN_CLOUD_API_KEY environment variable'
+            }, null, 2)
+          }
+        ]
+      };
+    }
+
+    try {
+      const asset = await this.openCloud.getAssetDetails(assetId);
+      const thumbnailUrl = await this.openCloud.getAssetThumbnail(assetId);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ...asset,
+              thumbnailUrl
+            }, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }
+        ]
+      };
+    }
+  }
+
+  private async getAssetThumbnail(
+    assetId: number,
+    size: '150x150' | '420x420' | '768x432' = '420x420'
+  ) {
+    try {
+      const thumbnailUrl = await this.openCloud.getAssetThumbnail(assetId, size);
+
+      if (thumbnailUrl) {
+        // Fetch the image and convert to base64
+        const imageResponse = await fetch(thumbnailUrl);
+        if (!imageResponse.ok) {
+          throw new Error('Failed to fetch thumbnail image');
+        }
+
+        const imageBuffer = await imageResponse.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                assetId,
+                size,
+                note: 'Image preview attached below'
+              }, null, 2)
+            },
+            {
+              type: 'image',
+              mimeType: 'image/png',
+              data: base64Image
+            }
+          ]
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                assetId,
+                error: 'Thumbnail not available or still processing'
+              }, null, 2)
+            }
+          ]
+        };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }
+        ]
+      };
+    }
+  }
+
+  private async insertAsset(
+    assetId: number,
+    parentPath: string = 'game.Workspace',
+    position?: { x: number; y: number; z: number }
+  ) {
+    // This delegates to the Studio plugin via the bridge
+    return await this.tools.insertAsset(assetId, parentPath, position);
+  }
+
+  private async previewAsset(
+    assetId: number,
+    includeProperties: boolean = true,
+    maxDepth: number = 10
+  ) {
+    // This delegates to the Studio plugin via the bridge
+    return await this.tools.previewAsset(assetId, includeProperties, maxDepth);
+  }
+
   async run() {
     const port = process.env.ROBLOX_STUDIO_PORT ? parseInt(process.env.ROBLOX_STUDIO_PORT) : 3002;
     const host = process.env.ROBLOX_STUDIO_HOST || '0.0.0.0';
     const httpServer = createHttpServer(this.tools, this.bridge);
-    
+
     await new Promise<void>((resolve) => {
       httpServer.listen(port, host, () => {
         console.error(`HTTP server listening on ${host}:${port} for Studio plugin`);
@@ -993,16 +1330,16 @@ class RobloxStudioMCPServer {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Roblox Studio MCP server running on stdio');
-    
+
     (httpServer as any).setMCPServerActive(true);
     console.error('MCP server marked as active');
-    
+
     console.error('Waiting for Studio plugin to connect...');
-    
+
     setInterval(() => {
       const pluginConnected = (httpServer as any).isPluginConnected();
       const mcpActive = (httpServer as any).isMCPServerActive();
-      
+
       if (pluginConnected && mcpActive) {
       } else if (pluginConnected && !mcpActive) {
         console.error('Studio plugin connected, but MCP server inactive');
@@ -1012,7 +1349,7 @@ class RobloxStudioMCPServer {
         console.error('Waiting for connections...');
       }
     }, 5000);
-    
+
     setInterval(() => {
       this.bridge.cleanupOldRequests();
     }, 5000);
