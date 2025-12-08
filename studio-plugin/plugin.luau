@@ -657,6 +657,11 @@ processRequest = function(request)
 		return handlers.removeTag(data)
 	elseif endpoint == "/api/get-tagged" then
 		return handlers.getTagged(data)
+	-- Asset insertion endpoint
+	elseif endpoint == "/api/insert-asset" then
+		return handlers.insertAsset(data)
+	elseif endpoint == "/api/preview-asset" then
+		return handlers.previewAsset(data)
 	else
 		return { error = "Unknown endpoint: " .. tostring(endpoint) }
 	end
@@ -2933,6 +2938,283 @@ handlers.getTagged = function(requestData)
 		return { error = "Failed to get tagged instances: " .. tostring(result) }
 	end
 end
+
+-- Asset Tools: Insert an asset from Creator Store
+handlers.insertAsset = function(requestData)
+	local assetId = requestData.assetId
+	local parentPath = requestData.parentPath or "game.Workspace"
+	local position = requestData.position
+
+	if not assetId then
+		return { error = "Asset ID is required" }
+	end
+
+	local parentInstance = getInstanceByPath(parentPath)
+	if not parentInstance then
+		return { error = "Parent instance not found: " .. parentPath }
+	end
+
+	-- Use AssetService:LoadAssetAsync (modern API that supports third-party assets)
+	local AssetService = game:GetService("AssetService")
+	local Selection = game:GetService("Selection")
+	
+	local loadSuccess, assetModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	
+	if not loadSuccess then
+		-- Return the actual Roblox error for debugging
+		return { 
+			error = "Failed to load asset",
+			robloxError = tostring(assetModel),
+			assetId = assetId,
+			hint = "Enable 'Allow Loading Third Party Assets' in Game Settings -> Security. The asset must also be public/free."
+		}
+	end
+	
+	if not assetModel then
+		return { 
+			error = "AssetService returned nil",
+			assetId = assetId,
+			hint = "The asset may not exist or is not accessible."
+		}
+	end
+
+	local success, result = pcall(function()
+		-- Get the actual content (child of the wrapper model)
+		local children = assetModel:GetChildren()
+		local insertedInstances = {}
+		
+		for _, child in ipairs(children) do
+			-- Set position if provided and it's a BasePart or Model with PrimaryPart
+			if position then
+				if child:IsA("BasePart") then
+					child.Position = Vector3.new(position.x or 0, position.y or 0, position.z or 0)
+				elseif child:IsA("Model") then
+					if child.PrimaryPart then
+						child:SetPrimaryPartCFrame(
+							CFrame.new(position.x or 0, position.y or 0, position.z or 0)
+						)
+					elseif child:FindFirstChildWhichIsA("BasePart") then
+						-- Move to approximate position
+						local firstPart = child:FindFirstChildWhichIsA("BasePart")
+						local offset = child:GetBoundingBox().Position - firstPart.Position
+						child:PivotTo(CFrame.new(position.x or 0, position.y or 0, position.z or 0))
+					end
+				end
+			end
+			
+			child.Parent = parentInstance
+			table.insert(insertedInstances, {
+				name = child.Name,
+				className = child.ClassName,
+				path = getInstancePath(child)
+			})
+		end
+		
+		-- Clean up the wrapper model
+		assetModel:Destroy()
+		
+		-- Set undo waypoint
+		ChangeHistoryService:SetWaypoint("Insert Asset " .. tostring(assetId))
+		
+		-- Select the inserted objects
+		local instancesToSelect = {}
+		for _, child in ipairs(parentInstance:GetChildren()) do
+			for _, inserted in ipairs(insertedInstances) do
+				if child.Name == inserted.name and child.ClassName == inserted.className then
+					table.insert(instancesToSelect, child)
+					break
+				end
+			end
+		end
+		
+		if #instancesToSelect > 0 then
+			Selection:Set(instancesToSelect)
+		end
+		
+		return {
+			success = true,
+			assetId = assetId,
+			parentPath = parentPath,
+			insertedInstances = insertedInstances,
+			message = "Asset inserted successfully. Scripts are sandboxed and won't auto-run."
+		}
+	end)
+
+	if success then
+		if result.error then
+			return result
+		end
+		return result
+	else
+		return { 
+			error = "Failed to process asset after loading",
+			robloxError = tostring(result),
+			assetId = assetId
+		}
+	end
+end
+
+-- Asset Tools: Preview an asset without inserting (inspect hierarchy, properties, attributes)
+handlers.previewAsset = function(requestData)
+	local assetId = requestData.assetId
+	local includeProperties = requestData.includeProperties or true
+	local maxDepth = requestData.maxDepth or 10
+
+	if not assetId then
+		return { error = "Asset ID is required" }
+	end
+
+	-- Use AssetService:LoadAssetAsync (modern API that supports third-party assets)
+	local AssetService = game:GetService("AssetService")
+	
+	local loadSuccess, assetModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	
+	if not loadSuccess then
+		return { 
+			error = "Failed to load asset for preview",
+			robloxError = tostring(assetModel),
+			assetId = assetId,
+			hint = "Enable 'Allow Loading Third Party Assets' in Game Settings -> Security."
+		}
+	end
+	
+	if not assetModel then
+		return { 
+			error = "AssetService returned nil",
+			assetId = assetId
+		}
+	end
+
+	-- Recursive function to build hierarchy with properties
+	local function buildHierarchy(instance, depth)
+		if depth > maxDepth then 
+			return { name = instance.Name, className = instance.ClassName, truncated = true }
+		end
+		
+		local node = {
+			name = instance.Name,
+			className = instance.ClassName,
+			children = {}
+		}
+		
+		if includeProperties then
+			node.properties = {}
+			
+			-- Get all attributes
+			local attrSuccess, attrs = pcall(function()
+				return instance:GetAttributes()
+			end)
+			if attrSuccess and next(attrs) then
+				node.attributes = attrs
+			end
+			
+			-- Extract common properties based on class type
+			if instance:IsA("BasePart") then
+				pcall(function() 
+					node.properties.Size = { X = instance.Size.X, Y = instance.Size.Y, Z = instance.Size.Z }
+				end)
+				pcall(function() 
+					node.properties.Position = { X = instance.Position.X, Y = instance.Position.Y, Z = instance.Position.Z }
+				end)
+				pcall(function() node.properties.Material = tostring(instance.Material) end)
+				pcall(function() node.properties.BrickColor = instance.BrickColor.Name end)
+				pcall(function() node.properties.Color = { R = instance.Color.R, G = instance.Color.G, B = instance.Color.B } end)
+				pcall(function() node.properties.Transparency = instance.Transparency end)
+				pcall(function() node.properties.Anchored = instance.Anchored end)
+				pcall(function() node.properties.CanCollide = instance.CanCollide end)
+			end
+			
+			if instance:IsA("MeshPart") then
+				pcall(function() node.properties.MeshId = instance.MeshId end)
+				pcall(function() node.properties.TextureID = instance.TextureID end)
+			end
+			
+			if instance:IsA("Model") then
+				pcall(function() 
+					if instance.PrimaryPart then
+						node.properties.PrimaryPart = instance.PrimaryPart.Name
+					end
+				end)
+			end
+			
+			if instance:IsA("LuaSourceContainer") then
+				pcall(function() 
+					local source = instance.Source
+					node.properties.SourceLength = #source
+					node.properties.SourcePreview = string.sub(source, 1, 200) .. (source and #source > 200 and "..." or "")
+				end)
+				if instance:IsA("BaseScript") then
+					pcall(function() node.properties.Enabled = instance.Enabled end)
+				end
+			end
+			
+			if instance:IsA("Decal") or instance:IsA("Texture") then
+				pcall(function() node.properties.Texture = instance.Texture end)
+			end
+			
+			if instance:IsA("Sound") then
+				pcall(function() node.properties.SoundId = instance.SoundId end)
+				pcall(function() node.properties.Volume = instance.Volume end)
+			end
+		end
+		
+		for _, child in ipairs(instance:GetChildren()) do
+			table.insert(node.children, buildHierarchy(child, depth + 1))
+		end
+		
+		return node
+	end
+
+	-- Build hierarchy for all children of the asset wrapper
+	local hierarchy = {}
+	local allDescendants = assetModel:GetDescendants()
+	
+	for _, child in ipairs(assetModel:GetChildren()) do
+		table.insert(hierarchy, buildHierarchy(child, 0))
+	end
+	
+	-- Collect class counts
+	local classCounts = {}
+	for _, desc in ipairs(allDescendants) do
+		classCounts[desc.ClassName] = (classCounts[desc.ClassName] or 0) + 1
+	end
+	
+	-- Check for specific content types
+	local hasScripts = false
+	local hasAnimations = false
+	local hasSounds = false
+	local hasParticles = false
+	
+	for _, desc in ipairs(allDescendants) do
+		if desc:IsA("LuaSourceContainer") then hasScripts = true end
+		if desc:IsA("Animation") or desc:IsA("AnimationTrack") then hasAnimations = true end
+		if desc:IsA("Sound") then hasSounds = true end
+		if desc:IsA("ParticleEmitter") or desc:IsA("Fire") or desc:IsA("Smoke") or desc:IsA("Sparkles") then hasParticles = true end
+	end
+	
+	-- Cleanup - don't leave asset in scene
+	assetModel:Destroy()
+	
+	return {
+		success = true,
+		assetId = assetId,
+		hierarchy = hierarchy,
+		summary = {
+			totalInstances = #allDescendants,
+			classes = classCounts,
+			hasScripts = hasScripts,
+			hasAnimations = hasAnimations,
+			hasSounds = hasSounds,
+			hasParticles = hasParticles
+		},
+		message = "Asset previewed and cleaned up. Use insert_asset to add to scene."
+	}
+end
+
 
 local function updateUIState()
 	if pluginState.isActive then
