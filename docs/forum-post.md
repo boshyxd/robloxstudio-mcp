@@ -20,7 +20,7 @@
 
 **Connect AI assistants like Claude to your Roblox Studio projects**
 
-*40 tools for project analysis, script editing, asset management, and bulk operations*
+*23 tools for project analysis, script editing, asset management, and bulk operations*
 
 </div>
 
@@ -84,7 +84,7 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 - Mass operations (property edits, smart/mass duplication, calculated/relative properties)
 
 <details>
-<summary><strong>Complete Tool List (40 tools)</strong></summary>
+<summary><strong>Complete Tool List (23 tools)</strong></summary>
 
 **Analysis & Search:** `get_project_structure`, `search_objects`, `search_files`, `search_by_property`
 
@@ -112,7 +112,7 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 
 ## Latest Updates
 
-### v1.7.0
+### v2.0.0
 - Asset tools - Search, preview, and insert Creator Store assets
 - 40 total tools for complete Studio control
 - Vision LLM support - Thumbnails visible to AI

@@ -92,7 +92,7 @@ If you encounter issues, you may need to run it through `cmd`. Update your confi
 4. **📤 Plugin responds** with extracted data
 5. **✅ AI receives** comprehensive Studio information
 
-**Available Tools:** 40 specialized tools for file trees, properties, scripts, assets, and object creation!
+**Available Tools:** 23 consolidated tools for file trees, properties, scripts, assets, and object creation!
 
 ## 🔧 Troubleshooting
 

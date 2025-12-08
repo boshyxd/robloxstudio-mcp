@@ -586,78 +586,57 @@ processRequest = function(request)
 	local endpoint = request.endpoint
 	local data = request.data or {}
 
-	if endpoint == "/api/file-tree" then
+	-- ============================================
+	-- NEW CONSOLIDATED ENDPOINTS
+	-- ============================================
+	
+	-- Consolidated search endpoint
+	if endpoint == "/api/search" then
+		return handlers.search(data)
+	-- Consolidated property endpoints
+	elseif endpoint == "/api/get-property" then
+		return handlers.getProperty(data)
+	elseif endpoint == "/api/set-property" then
+		return handlers.setPropertyConsolidated(data)
+	-- Consolidated create/delete
+	elseif endpoint == "/api/create" then
+		return handlers.createConsolidated(data)
+	elseif endpoint == "/api/delete" then
+		return handlers.deleteConsolidated(data)
+	-- Consolidated duplicate
+	elseif endpoint == "/api/duplicate" then
+		return handlers.duplicateConsolidated(data)
+	-- Consolidated script editing
+	elseif endpoint == "/api/edit-script" then
+		return handlers.editScript(data)
+	-- Consolidated attribute
+	elseif endpoint == "/api/attribute" then
+		return handlers.attributeConsolidated(data)
+	-- Consolidated tag
+	elseif endpoint == "/api/tag" then
+		return handlers.tagConsolidated(data)
+	
+	-- ============================================
+	-- UNCHANGED ENDPOINTS
+	-- ============================================
+	elseif endpoint == "/api/file-tree" then
 		return handlers.getFileTree(data)
-	elseif endpoint == "/api/search-files" then
-		return handlers.searchFiles(data)
 	elseif endpoint == "/api/place-info" then
 		return handlers.getPlaceInfo(data)
 	elseif endpoint == "/api/services" then
 		return handlers.getServices(data)
-	elseif endpoint == "/api/search-objects" then
-		return handlers.searchObjects(data)
 	elseif endpoint == "/api/instance-properties" then
 		return handlers.getInstanceProperties(data)
 	elseif endpoint == "/api/instance-children" then
 		return handlers.getInstanceChildren(data)
-	elseif endpoint == "/api/search-by-property" then
-		return handlers.searchByProperty(data)
 	elseif endpoint == "/api/class-info" then
 		return handlers.getClassInfo(data)
 	elseif endpoint == "/api/project-structure" then
 		return handlers.getProjectStructure(data)
-	elseif endpoint == "/api/set-property" then
-		return handlers.setProperty(data)
-	elseif endpoint == "/api/mass-set-property" then
-		return handlers.massSetProperty(data)
-	elseif endpoint == "/api/mass-get-property" then
-		return handlers.massGetProperty(data)
-	elseif endpoint == "/api/create-object" then
-		return handlers.createObject(data)
-	elseif endpoint == "/api/mass-create-objects" then
-		return handlers.massCreateObjects(data)
-	elseif endpoint == "/api/mass-create-objects-with-properties" then
-		return handlers.massCreateObjectsWithProperties(data)
-	elseif endpoint == "/api/delete-object" then
-		return handlers.deleteObject(data)
-	elseif endpoint == "/api/smart-duplicate" then
-		return handlers.smartDuplicate(data)
-	elseif endpoint == "/api/mass-duplicate" then
-		return handlers.massDuplicate(data)
-	elseif endpoint == "/api/set-calculated-property" then
-		return handlers.setCalculatedProperty(data)
-	elseif endpoint == "/api/set-relative-property" then
-		return handlers.setRelativeProperty(data)
 	elseif endpoint == "/api/get-script-source" then
 		return handlers.getScriptSource(data)
 	elseif endpoint == "/api/set-script-source" then
 		return handlers.setScriptSource(data)
-	-- Partial script editing endpoints
-	elseif endpoint == "/api/edit-script-lines" then
-		return handlers.editScriptLines(data)
-	elseif endpoint == "/api/insert-script-lines" then
-		return handlers.insertScriptLines(data)
-	elseif endpoint == "/api/delete-script-lines" then
-		return handlers.deleteScriptLines(data)
-	-- Attribute endpoints
-	elseif endpoint == "/api/get-attribute" then
-		return handlers.getAttribute(data)
-	elseif endpoint == "/api/set-attribute" then
-		return handlers.setAttribute(data)
-	elseif endpoint == "/api/get-attributes" then
-		return handlers.getAttributes(data)
-	elseif endpoint == "/api/delete-attribute" then
-		return handlers.deleteAttribute(data)
-	-- Tag endpoints
-	elseif endpoint == "/api/get-tags" then
-		return handlers.getTags(data)
-	elseif endpoint == "/api/add-tag" then
-		return handlers.addTag(data)
-	elseif endpoint == "/api/remove-tag" then
-		return handlers.removeTag(data)
-	elseif endpoint == "/api/get-tagged" then
-		return handlers.getTagged(data)
-	-- Asset insertion endpoint
 	elseif endpoint == "/api/insert-asset" then
 		return handlers.insertAsset(data)
 	elseif endpoint == "/api/preview-asset" then
@@ -3213,6 +3192,690 @@ handlers.previewAsset = function(requestData)
 		},
 		message = "Asset previewed and cleaned up. Use insert_asset to add to scene."
 	}
+end
+
+
+-- ============================================
+-- CONSOLIDATED HANDLERS
+-- ============================================
+
+-- Consolidated search handler
+handlers.search = function(requestData)
+	local query = requestData.query
+	local searchType = requestData.searchType or "name"
+	local propertyName = requestData.propertyName
+	local propertyValue = requestData.propertyValue
+	
+	if not query then
+		return { error = "Query is required" }
+	end
+	
+	local results = {}
+	
+	local function searchRecursive(instance)
+		local match = false
+		
+		if searchType == "name" then
+			match = instance.Name:lower():find(query:lower()) ~= nil
+		elseif searchType == "class" then
+			match = instance.ClassName:lower():find(query:lower()) ~= nil
+		elseif searchType == "content" and instance:IsA("LuaSourceContainer") then
+			match = instance.Source:lower():find(query:lower()) ~= nil
+		elseif searchType == "property" and propertyName then
+			local success, value = pcall(function()
+				return tostring(instance[propertyName])
+			end)
+			if success then
+				local searchVal = propertyValue or query
+				match = value:lower():find(searchVal:lower()) ~= nil
+			end
+		end
+		
+		if match then
+			table.insert(results, {
+				name = instance.Name,
+				className = instance.ClassName,
+				path = getInstancePath(instance),
+				hasSource = instance:IsA("LuaSourceContainer"),
+			})
+		end
+		
+		for _, child in ipairs(instance:GetChildren()) do
+			searchRecursive(child)
+		end
+	end
+	
+	searchRecursive(game)
+	
+	return {
+		results = results,
+		query = query,
+		searchType = searchType,
+		count = #results,
+	}
+end
+
+-- Consolidated get property handler (supports batch)
+handlers.getProperty = function(requestData)
+	local paths = requestData.paths
+	local propertyName = requestData.propertyName
+	
+	if not paths or not propertyName then
+		return { error = "Paths and propertyName are required" }
+	end
+	
+	-- Normalize to array
+	if type(paths) == "string" then
+		paths = { paths }
+	end
+	
+	local results = {}
+	local errors = {}
+	
+	for _, path in ipairs(paths) do
+		local instance = getInstanceByPath(path)
+		if instance then
+			local success, value = pcall(function()
+				return instance[propertyName]
+			end)
+			if success then
+				table.insert(results, {
+					path = path,
+					propertyName = propertyName,
+					value = tostring(value),
+					rawValue = value
+				})
+			else
+				table.insert(errors, { path = path, error = tostring(value) })
+			end
+		else
+			table.insert(errors, { path = path, error = "Instance not found" })
+		end
+	end
+	
+	return {
+		results = results,
+		errors = #errors > 0 and errors or nil,
+		count = #results
+	}
+end
+
+-- Consolidated set property handler (supports batch, formulas, relative ops)
+handlers.setPropertyConsolidated = function(requestData)
+	local paths = requestData.paths
+	local propertyName = requestData.propertyName
+	local propertyValue = requestData.propertyValue
+	local operation = requestData.operation or "set"
+	local component = requestData.component
+	local formula = requestData.formula
+	local variables = requestData.variables or {}
+	
+	if not paths or not propertyName then
+		return { error = "Paths and propertyName are required" }
+	end
+	
+	-- Normalize to array
+	if type(paths) == "string" then
+		paths = { paths }
+	end
+	
+	local results = {}
+	local errors = {}
+	
+	for i, path in ipairs(paths) do
+		local instance = getInstanceByPath(path)
+		if instance then
+			local success, err = pcall(function()
+				local finalValue = propertyValue
+				
+				-- Handle formula evaluation
+				if formula then
+					local env = { index = i, i = i, math = math }
+					for k, v in pairs(variables) do
+						env[k] = v
+					end
+					local func = loadstring("return " .. formula)
+					if func then
+						setfenv(func, env)
+						finalValue = func()
+					end
+				end
+				
+				-- Handle relative operations
+				if operation ~= "set" and operation then
+					local currentValue = instance[propertyName]
+					if component and (typeof(currentValue) == "Vector3" or typeof(currentValue) == "UDim2") then
+						if typeof(currentValue) == "Vector3" then
+							local x, y, z = currentValue.X, currentValue.Y, currentValue.Z
+							local delta = tonumber(finalValue) or 0
+							if component == "X" then
+								if operation == "add" then x = x + delta
+								elseif operation == "subtract" then x = x - delta
+								elseif operation == "multiply" then x = x * delta
+								elseif operation == "divide" then x = x / delta end
+							elseif component == "Y" then
+								if operation == "add" then y = y + delta
+								elseif operation == "subtract" then y = y - delta
+								elseif operation == "multiply" then y = y * delta
+								elseif operation == "divide" then y = y / delta end
+							elseif component == "Z" then
+								if operation == "add" then z = z + delta
+								elseif operation == "subtract" then z = z - delta
+								elseif operation == "multiply" then z = z * delta
+								elseif operation == "divide" then z = z / delta end
+							end
+							finalValue = Vector3.new(x, y, z)
+						end
+					elseif type(currentValue) == "number" then
+						local delta = tonumber(finalValue) or 0
+						if operation == "add" then finalValue = currentValue + delta
+						elseif operation == "subtract" then finalValue = currentValue - delta
+						elseif operation == "multiply" then finalValue = currentValue * delta
+						elseif operation == "divide" then finalValue = currentValue / delta end
+					end
+				end
+				
+				-- Parse special types
+				if propertyName == "Size" or propertyName == "Position" then
+					if type(finalValue) == "string" then
+						local parts = string.split(finalValue, ",")
+						if #parts == 3 then
+							finalValue = Vector3.new(tonumber(parts[1]) or 0, tonumber(parts[2]) or 0, tonumber(parts[3]) or 0)
+						end
+					end
+				elseif propertyName == "BrickColor" then
+					finalValue = BrickColor.new(tostring(finalValue))
+				elseif propertyName == "Material" then
+					finalValue = Enum.Material[tostring(finalValue)] or instance.Material
+				end
+				
+				instance[propertyName] = finalValue
+			end)
+			
+			if success then
+				table.insert(results, { path = path, success = true })
+			else
+				table.insert(errors, { path = path, error = tostring(err) })
+			end
+		else
+			table.insert(errors, { path = path, error = "Instance not found" })
+		end
+	end
+	
+	ChangeHistoryService:SetWaypoint("Set property: " .. propertyName)
+	
+	return {
+		success = #errors == 0,
+		modified = #results,
+		errors = #errors > 0 and errors or nil
+	}
+end
+
+-- Consolidated create handler (supports batch with properties)
+handlers.createConsolidated = function(requestData)
+	local objects = requestData.objects
+	
+	if not objects then
+		return { error = "Objects array is required" }
+	end
+	
+	-- Normalize single object to array
+	if objects.className then
+		objects = { objects }
+	end
+	
+	local created = {}
+	local errors = {}
+	
+	for _, obj in ipairs(objects) do
+		local className = obj.className
+		local parentPath = obj.parent
+		local name = obj.name
+		local properties = obj.properties
+		
+		if not className or not parentPath then
+			table.insert(errors, { error = "className and parent required", object = obj })
+		else
+			local parent = getInstanceByPath(parentPath)
+			if parent then
+				local success, newInstance = pcall(function()
+					local inst = Instance.new(className)
+					if name then inst.Name = name end
+					
+					if properties then
+						for propName, propValue in pairs(properties) do
+							pcall(function()
+								if propName == "Size" or propName == "Position" then
+									if type(propValue) == "table" then
+										inst[propName] = Vector3.new(propValue.X or propValue[1] or 0, propValue.Y or propValue[2] or 0, propValue.Z or propValue[3] or 0)
+									elseif type(propValue) == "string" then
+										local parts = string.split(propValue, ",")
+										inst[propName] = Vector3.new(tonumber(parts[1]) or 0, tonumber(parts[2]) or 0, tonumber(parts[3]) or 0)
+									end
+								elseif propName == "Color" or propName == "Color3" then
+									if type(propValue) == "table" then
+										inst.Color = Color3.new(propValue.R or propValue[1] or 0, propValue.G or propValue[2] or 0, propValue.B or propValue[3] or 0)
+									end
+								elseif propName == "BrickColor" then
+									inst.BrickColor = BrickColor.new(tostring(propValue))
+								elseif propName == "Material" then
+									inst.Material = Enum.Material[tostring(propValue)] or Enum.Material.Plastic
+								else
+									inst[propName] = propValue
+								end
+							end)
+						end
+					end
+					
+					inst.Parent = parent
+					return inst
+				end)
+				
+				if success then
+					table.insert(created, {
+						name = newInstance.Name,
+						className = newInstance.ClassName,
+						path = getInstancePath(newInstance)
+					})
+				else
+					table.insert(errors, { className = className, parent = parentPath, error = tostring(newInstance) })
+				end
+			else
+				table.insert(errors, { className = className, parent = parentPath, error = "Parent not found" })
+			end
+		end
+	end
+	
+	ChangeHistoryService:SetWaypoint("Create objects")
+	
+	return {
+		success = #errors == 0,
+		created = created,
+		count = #created,
+		errors = #errors > 0 and errors or nil
+	}
+end
+
+-- Consolidated delete handler (supports batch)
+handlers.deleteConsolidated = function(requestData)
+	local paths = requestData.paths
+	
+	if not paths then
+		return { error = "Paths required" }
+	end
+	
+	if type(paths) == "string" then
+		paths = { paths }
+	end
+	
+	local deleted = {}
+	local errors = {}
+	
+	for _, path in ipairs(paths) do
+		local instance = getInstanceByPath(path)
+		if instance then
+			local name = instance.Name
+			local className = instance.ClassName
+			local success, err = pcall(function()
+				instance:Destroy()
+			end)
+			if success then
+				table.insert(deleted, { path = path, name = name, className = className })
+			else
+				table.insert(errors, { path = path, error = tostring(err) })
+			end
+		else
+			table.insert(errors, { path = path, error = "Instance not found" })
+		end
+	end
+	
+	ChangeHistoryService:SetWaypoint("Delete objects")
+	
+	return {
+		success = #errors == 0,
+		deleted = deleted,
+		count = #deleted,
+		errors = #errors > 0 and errors or nil
+	}
+end
+
+-- Consolidated duplicate handler (supports batch with options)
+handlers.duplicateConsolidated = function(requestData)
+	local duplications = requestData.duplications
+	
+	if not duplications then
+		return { error = "Duplications required" }
+	end
+	
+	-- Normalize single to array
+	if duplications.instancePath then
+		duplications = { duplications }
+	end
+	
+	local created = {}
+	local errors = {}
+	
+	for _, dup in ipairs(duplications) do
+		local instancePath = dup.instancePath
+		local count = dup.count or 1
+		local options = dup.options or {}
+		
+		local instance = getInstanceByPath(instancePath)
+		if instance then
+			for i = 1, count do
+				local success, clone = pcall(function()
+					local c = instance:Clone()
+					
+					-- Apply name pattern
+					if options.namePattern then
+						c.Name = options.namePattern:gsub("{n}", tostring(i)):gsub("{i}", tostring(i))
+					else
+						c.Name = instance.Name .. "_" .. i
+					end
+					
+					-- Apply position offset
+					if options.positionOffset and c:IsA("BasePart") then
+						local offset = options.positionOffset
+						c.Position = c.Position + Vector3.new(
+							(offset[1] or 0) * i,
+							(offset[2] or 0) * i,
+							(offset[3] or 0) * i
+						)
+					elseif options.positionOffset and c:IsA("Model") and c.PrimaryPart then
+						local offset = options.positionOffset
+						c:SetPrimaryPartCFrame(c.PrimaryPart.CFrame + Vector3.new(
+							(offset[1] or 0) * i,
+							(offset[2] or 0) * i,
+							(offset[3] or 0) * i
+						))
+					end
+					
+					-- Target parent or same parent
+					if options.targetParents and options.targetParents[i] then
+						local targetParent = getInstanceByPath(options.targetParents[i])
+						c.Parent = targetParent or instance.Parent
+					else
+						c.Parent = instance.Parent
+					end
+					
+					return c
+				end)
+				
+				if success then
+					table.insert(created, {
+						name = clone.Name,
+						className = clone.ClassName,
+						path = getInstancePath(clone)
+					})
+				else
+					table.insert(errors, { instancePath = instancePath, index = i, error = tostring(clone) })
+				end
+			end
+		else
+			table.insert(errors, { instancePath = instancePath, error = "Instance not found" })
+		end
+	end
+	
+	ChangeHistoryService:SetWaypoint("Duplicate objects")
+	
+	return {
+		success = #errors == 0,
+		created = created,
+		count = #created,
+		errors = #errors > 0 and errors or nil
+	}
+end
+
+-- Consolidated script editing handler
+handlers.editScript = function(requestData)
+	local instancePath = requestData.instancePath
+	local action = requestData.action
+	local startLine = requestData.startLine
+	local endLine = requestData.endLine or startLine
+	local content = requestData.content or ""
+	
+	if not instancePath or not action or not startLine then
+		return { error = "instancePath, action, and startLine required" }
+	end
+	
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+	
+	if not instance:IsA("LuaSourceContainer") then
+		return { error = "Instance is not a script" }
+	end
+	
+	local source = instance.Source
+	local lines = {}
+	for line in (source .. "\n"):gmatch("([^\n]*)\n") do
+		table.insert(lines, line)
+	end
+	
+	local success, err = pcall(function()
+		if action == "replace" then
+			local newLines = {}
+			for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+				table.insert(newLines, line)
+			end
+			
+			local result = {}
+			for i = 1, startLine - 1 do
+				table.insert(result, lines[i] or "")
+			end
+			for _, line in ipairs(newLines) do
+				table.insert(result, line)
+			end
+			for i = endLine + 1, #lines do
+				table.insert(result, lines[i])
+			end
+			instance.Source = table.concat(result, "\n")
+			
+		elseif action == "insert" then
+			local newLines = {}
+			for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+				table.insert(newLines, line)
+			end
+			
+			local result = {}
+			for i = 1, startLine do
+				table.insert(result, lines[i] or "")
+			end
+			for _, line in ipairs(newLines) do
+				table.insert(result, line)
+			end
+			for i = startLine + 1, #lines do
+				table.insert(result, lines[i])
+			end
+			instance.Source = table.concat(result, "\n")
+			
+		elseif action == "delete" then
+			local result = {}
+			for i = 1, startLine - 1 do
+				table.insert(result, lines[i])
+			end
+			for i = endLine + 1, #lines do
+				table.insert(result, lines[i])
+			end
+			instance.Source = table.concat(result, "\n")
+		end
+	end)
+	
+	if success then
+		ChangeHistoryService:SetWaypoint("Edit script: " .. action)
+		return {
+			success = true,
+			instancePath = instancePath,
+			action = action,
+			linesAffected = endLine - startLine + 1
+		}
+	else
+		return { error = tostring(err) }
+	end
+end
+
+-- Consolidated attribute handler
+handlers.attributeConsolidated = function(requestData)
+	local instancePath = requestData.instancePath
+	local action = requestData.action
+	local attributeName = requestData.attributeName
+	local attributeValue = requestData.attributeValue
+	local valueType = requestData.valueType
+	
+	if not instancePath or not action then
+		return { error = "instancePath and action required" }
+	end
+	
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+	
+	if action == "get" then
+		if not attributeName then
+			return { error = "attributeName required for get" }
+		end
+		local value = instance:GetAttribute(attributeName)
+		return {
+			instancePath = instancePath,
+			attributeName = attributeName,
+			value = value,
+			valueType = typeof(value)
+		}
+		
+	elseif action == "get_all" then
+		local attributes = instance:GetAttributes()
+		local result = {}
+		for name, value in pairs(attributes) do
+			result[name] = { value = value, type = typeof(value) }
+		end
+		return {
+			instancePath = instancePath,
+			attributes = result,
+			count = 0 -- TODO: count pairs
+		}
+		
+	elseif action == "set" then
+		if not attributeName then
+			return { error = "attributeName required for set" }
+		end
+		
+		local finalValue = attributeValue
+		if valueType == "Vector3" and type(attributeValue) == "table" then
+			finalValue = Vector3.new(attributeValue.X or attributeValue[1] or 0, attributeValue.Y or attributeValue[2] or 0, attributeValue.Z or attributeValue[3] or 0)
+		elseif valueType == "Color3" and type(attributeValue) == "table" then
+			finalValue = Color3.new(attributeValue.R or attributeValue[1] or 0, attributeValue.G or attributeValue[2] or 0, attributeValue.B or attributeValue[3] or 0)
+		elseif valueType == "BrickColor" then
+			finalValue = BrickColor.new(tostring(attributeValue))
+		end
+		
+		instance:SetAttribute(attributeName, finalValue)
+		ChangeHistoryService:SetWaypoint("Set attribute: " .. attributeName)
+		return {
+			success = true,
+			instancePath = instancePath,
+			attributeName = attributeName,
+			value = finalValue
+		}
+		
+	elseif action == "delete" then
+		if not attributeName then
+			return { error = "attributeName required for delete" }
+		end
+		instance:SetAttribute(attributeName, nil)
+		ChangeHistoryService:SetWaypoint("Delete attribute: " .. attributeName)
+		return {
+			success = true,
+			instancePath = instancePath,
+			attributeName = attributeName,
+			deleted = true
+		}
+	end
+	
+	return { error = "Unknown action: " .. tostring(action) }
+end
+
+-- Consolidated tag handler
+handlers.tagConsolidated = function(requestData)
+	local action = requestData.action
+	local instancePath = requestData.instancePath
+	local tagName = requestData.tagName
+	
+	if not action then
+		return { error = "action required" }
+	end
+	
+	local CollectionService = game:GetService("CollectionService")
+	
+	if action == "get" then
+		if not instancePath then
+			return { error = "instancePath required for get" }
+		end
+		local instance = getInstanceByPath(instancePath)
+		if not instance then
+			return { error = "Instance not found" }
+		end
+		local tags = CollectionService:GetTags(instance)
+		return {
+			instancePath = instancePath,
+			tags = tags,
+			count = #tags
+		}
+		
+	elseif action == "add" then
+		if not instancePath or not tagName then
+			return { error = "instancePath and tagName required for add" }
+		end
+		local instance = getInstanceByPath(instancePath)
+		if not instance then
+			return { error = "Instance not found" }
+		end
+		CollectionService:AddTag(instance, tagName)
+		ChangeHistoryService:SetWaypoint("Add tag: " .. tagName)
+		return {
+			success = true,
+			instancePath = instancePath,
+			tagName = tagName
+		}
+		
+	elseif action == "remove" then
+		if not instancePath or not tagName then
+			return { error = "instancePath and tagName required for remove" }
+		end
+		local instance = getInstanceByPath(instancePath)
+		if not instance then
+			return { error = "Instance not found" }
+		end
+		CollectionService:RemoveTag(instance, tagName)
+		ChangeHistoryService:SetWaypoint("Remove tag: " .. tagName)
+		return {
+			success = true,
+			instancePath = instancePath,
+			tagName = tagName
+		}
+		
+	elseif action == "find" then
+		if not tagName then
+			return { error = "tagName required for find" }
+		end
+		local tagged = CollectionService:GetTagged(tagName)
+		local results = {}
+		for _, instance in ipairs(tagged) do
+			table.insert(results, {
+				name = instance.Name,
+				className = instance.ClassName,
+				path = getInstancePath(instance)
+			})
+		end
+		return {
+			tagName = tagName,
+			instances = results,
+			count = #results
+		}
+	end
+	
+	return { error = "Unknown action: " .. tostring(action) }
 end
 
 

@@ -14,7 +14,7 @@
 
 **Connect AI assistants like Claude to your Roblox Studio projects**
 
-*40 tools for project analysis, script editing, asset management, and bulk operations*
+*23 tools for project analysis, script editing, asset management, and bulk operations*
 
 </div>
 
@@ -97,7 +97,7 @@ That's it! The plugin shows "Connected" when ready.
 - Read and edit scripts programmatically
 
 **What Makes It Different:**
-- 40 specialized tools for Roblox development
+- 23 consolidated tools for Roblox development
 - Script source reading and editing
 - Built specifically for AI assistant integration
 - Pure TypeScript - easy to understand and modify
@@ -125,7 +125,7 @@ That's it! The plugin shows "Connected" when ready.
 - Complete object information
 
 <details>
-<summary><strong>Complete Tool List (40 tools)</strong></summary>
+<summary><strong>Complete Tool List (23 tools)</strong></summary>
 
 **Analysis & Search:** `get_project_structure`, `search_objects`, `search_files`, `search_by_property`
 

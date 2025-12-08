@@ -8,329 +8,167 @@ export class RobloxStudioTools {
     this.client = new StudioHttpClient(bridge);
   }
 
-  // File System Tools
+  private formatResponse(response: any) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(response, null, 2) }]
+    };
+  }
+
+  // ============================================
+  // EXPLORATION TOOLS (7 tools)
+  // ============================================
+
   async getFileTree(path: string = '') {
     const response = await this.client.request('/api/file-tree', { path });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  async searchFiles(query: string, searchType: string = 'name') {
-    const response = await this.client.request('/api/search-files', { query, searchType });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  // Studio Context Tools
   async getPlaceInfo() {
     const response = await this.client.request('/api/place-info', {});
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
   async getServices(serviceName?: string) {
     const response = await this.client.request('/api/services', { serviceName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  async searchObjects(query: string, searchType: string = 'name', propertyName?: string) {
-    const response = await this.client.request('/api/search-objects', {
-      query,
-      searchType,
-      propertyName
+  async getProjectStructure(path?: string, maxDepth?: number, scriptsOnly?: boolean) {
+    const response = await this.client.request('/api/project-structure', {
+      path, maxDepth, scriptsOnly
     });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  // Property & Instance Tools
   async getInstanceProperties(instancePath: string) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for get_instance_properties');
-    }
+    if (!instancePath) throw new Error('Instance path is required');
     const response = await this.client.request('/api/instance-properties', { instancePath });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
   async getInstanceChildren(instancePath: string) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for get_instance_children');
-    }
+    if (!instancePath) throw new Error('Instance path is required');
     const response = await this.client.request('/api/instance-children', { instancePath });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async searchByProperty(propertyName: string, propertyValue: string) {
-    if (!propertyName || !propertyValue) {
-      throw new Error('Property name and value are required for search_by_property');
-    }
-    const response = await this.client.request('/api/search-by-property', {
-      propertyName,
-      propertyValue
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
   async getClassInfo(className: string) {
-    if (!className) {
-      throw new Error('Class name is required for get_class_info');
-    }
+    if (!className) throw new Error('Class name is required');
     const response = await this.client.request('/api/class-info', { className });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  // Project Tools
-  async getProjectStructure(path?: string, maxDepth?: number, scriptsOnly?: boolean) {
-    const response = await this.client.request('/api/project-structure', {
-      path,
-      maxDepth,
-      scriptsOnly
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
+  // ============================================
+  // SEARCH (1 consolidated tool)
+  // ============================================
 
-
-  // Property Modification Tools
-  async setProperty(instancePath: string, propertyName: string, propertyValue: any) {
-    if (!instancePath || !propertyName) {
-      throw new Error('Instance path and property name are required for set_property');
-    }
-    const response = await this.client.request('/api/set-property', {
-      instancePath,
-      propertyName,
-      propertyValue
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async massSetProperty(paths: string[], propertyName: string, propertyValue: any) {
-    if (!paths || paths.length === 0 || !propertyName) {
-      throw new Error('Paths array and property name are required for mass_set_property');
-    }
-    const response = await this.client.request('/api/mass-set-property', {
-      paths,
-      propertyName,
-      propertyValue
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async massGetProperty(paths: string[], propertyName: string) {
-    if (!paths || paths.length === 0 || !propertyName) {
-      throw new Error('Paths array and property name are required for mass_get_property');
-    }
-    const response = await this.client.request('/api/mass-get-property', {
-      paths,
-      propertyName
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  // Object Creation Tools
-  async createObject(className: string, parent: string, name?: string) {
-    if (!className || !parent) {
-      throw new Error('Class name and parent are required for create_object');
-    }
-    const response = await this.client.request('/api/create-object', {
-      className,
-      parent,
-      name
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async createObjectWithProperties(className: string, parent: string, name?: string, properties?: Record<string, any>) {
-    if (!className || !parent) {
-      throw new Error('Class name and parent are required for create_object_with_properties');
-    }
-    const response = await this.client.request('/api/create-object', {
-      className,
-      parent,
-      name,
-      properties
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async massCreateObjects(objects: Array<{ className: string, parent: string, name?: string }>) {
-    if (!objects || objects.length === 0) {
-      throw new Error('Objects array is required for mass_create_objects');
-    }
-    const response = await this.client.request('/api/mass-create-objects', { objects });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async massCreateObjectsWithProperties(objects: Array<{ className: string, parent: string, name?: string, properties?: Record<string, any> }>) {
-    if (!objects || objects.length === 0) {
-      throw new Error('Objects array is required for mass_create_objects_with_properties');
-    }
-    const response = await this.client.request('/api/mass-create-objects-with-properties', { objects });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async deleteObject(instancePath: string) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for delete_object');
-    }
-    const response = await this.client.request('/api/delete-object', { instancePath });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  // Smart Duplication Tools
-  async smartDuplicate(
-    instancePath: string,
-    count: number,
+  async search(
+    query: string,
+    searchType: 'name' | 'class' | 'property' | 'content' = 'name',
     options?: {
-      namePattern?: string; // e.g., "Button{n}" where {n} is replaced with index
-      positionOffset?: [number, number, number]; // X, Y, Z offset per duplicate
-      rotationOffset?: [number, number, number]; // X, Y, Z rotation offset per duplicate
-      scaleOffset?: [number, number, number]; // X, Y, Z scale multiplier per duplicate
-      propertyVariations?: Record<string, any[]>; // Property name to array of values
-      targetParents?: string[]; // Different parent for each duplicate
+      propertyName?: string;
+      propertyValue?: string;
     }
   ) {
-    if (!instancePath || count < 1) {
-      throw new Error('Instance path and count > 0 are required for smart_duplicate');
-    }
-    const response = await this.client.request('/api/smart-duplicate', {
-      instancePath,
-      count,
-      options
+    if (!query) throw new Error('Query is required');
+    const response = await this.client.request('/api/search', {
+      query,
+      searchType,
+      propertyName: options?.propertyName,
+      propertyValue: options?.propertyValue
     });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  async massDuplicate(
-    duplications: Array<{
+  // ============================================
+  // PROPERTY TOOLS (2 tools)
+  // ============================================
+
+  async getProperty(
+    paths: string | string[],
+    propertyName: string
+  ) {
+    const pathArray = Array.isArray(paths) ? paths : [paths];
+    if (pathArray.length === 0 || !propertyName) {
+      throw new Error('Paths and property name are required');
+    }
+    const response = await this.client.request('/api/get-property', {
+      paths: pathArray,
+      propertyName
+    });
+    return this.formatResponse(response);
+  }
+
+  async setProperty(
+    paths: string | string[],
+    propertyName: string,
+    propertyValue: any,
+    options?: {
+      operation?: 'set' | 'add' | 'multiply' | 'divide' | 'subtract';
+      component?: 'X' | 'Y' | 'Z';
+      formula?: string;
+      variables?: Record<string, any>;
+    }
+  ) {
+    const pathArray = Array.isArray(paths) ? paths : [paths];
+    if (pathArray.length === 0 || !propertyName) {
+      throw new Error('Paths and property name are required');
+    }
+    const response = await this.client.request('/api/set-property', {
+      paths: pathArray,
+      propertyName,
+      propertyValue,
+      operation: options?.operation || 'set',
+      component: options?.component,
+      formula: options?.formula,
+      variables: options?.variables
+    });
+    return this.formatResponse(response);
+  }
+
+  // ============================================
+  // OBJECT MANAGEMENT (2 tools)
+  // ============================================
+
+  async create(
+    objects: {
+      className: string;
+      parent: string;
+      name?: string;
+      properties?: Record<string, any>;
+    } | Array<{
+      className: string;
+      parent: string;
+      name?: string;
+      properties?: Record<string, any>;
+    }>
+  ) {
+    const objectArray = Array.isArray(objects) ? objects : [objects];
+    if (objectArray.length === 0) throw new Error('At least one object definition is required');
+
+    for (const obj of objectArray) {
+      if (!obj.className || !obj.parent) {
+        throw new Error('Each object requires className and parent');
+      }
+    }
+
+    const response = await this.client.request('/api/create', { objects: objectArray });
+    return this.formatResponse(response);
+  }
+
+  async delete(instancePaths: string | string[]) {
+    const pathArray = Array.isArray(instancePaths) ? instancePaths : [instancePaths];
+    if (pathArray.length === 0) throw new Error('At least one instance path is required');
+    const response = await this.client.request('/api/delete', { paths: pathArray });
+    return this.formatResponse(response);
+  }
+
+  // ============================================
+  // DUPLICATION (1 tool)
+  // ============================================
+
+  async duplicate(
+    duplications: {
       instancePath: string;
       count: number;
       options?: {
@@ -340,321 +178,153 @@ export class RobloxStudioTools {
         scaleOffset?: [number, number, number];
         propertyVariations?: Record<string, any[]>;
         targetParents?: string[];
-      }
+      };
+    } | Array<{
+      instancePath: string;
+      count: number;
+      options?: {
+        namePattern?: string;
+        positionOffset?: [number, number, number];
+        rotationOffset?: [number, number, number];
+        scaleOffset?: [number, number, number];
+        propertyVariations?: Record<string, any[]>;
+        targetParents?: string[];
+      };
     }>
   ) {
-    if (!duplications || duplications.length === 0) {
-      throw new Error('Duplications array is required for mass_duplicate');
+    const dupArray = Array.isArray(duplications) ? duplications : [duplications];
+    if (dupArray.length === 0) throw new Error('At least one duplication is required');
+
+    for (const dup of dupArray) {
+      if (!dup.instancePath || dup.count < 1) {
+        throw new Error('Each duplication requires instancePath and count > 0');
+      }
     }
-    const response = await this.client.request('/api/mass-duplicate', { duplications });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+
+    const response = await this.client.request('/api/duplicate', { duplications: dupArray });
+    return this.formatResponse(response);
   }
 
-  // Calculated Property Tools
-  async setCalculatedProperty(
-    paths: string[],
-    propertyName: string,
-    formula: string,
-    variables?: Record<string, any>
-  ) {
-    if (!paths || paths.length === 0 || !propertyName || !formula) {
-      throw new Error('Paths, property name, and formula are required for set_calculated_property');
-    }
-    const response = await this.client.request('/api/set-calculated-property', {
-      paths,
-      propertyName,
-      formula,
-      variables
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
+  // ============================================
+  // SCRIPT TOOLS (3 tools)
+  // ============================================
 
-  // Relative Property Tools
-  async setRelativeProperty(
-    paths: string[],
-    propertyName: string,
-    operation: 'add' | 'multiply' | 'divide' | 'subtract' | 'power',
-    value: any,
-    component?: 'X' | 'Y' | 'Z' // For Vector3/UDim2 properties
-  ) {
-    if (!paths || paths.length === 0 || !propertyName || !operation || value === undefined) {
-      throw new Error('Paths, property name, operation, and value are required for set_relative_property');
-    }
-    const response = await this.client.request('/api/set-relative-property', {
-      paths,
-      propertyName,
-      operation,
-      value,
-      component
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  // Script Management Tools
   async getScriptSource(instancePath: string, startLine?: number, endLine?: number) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for get_script_source');
-    }
-    const response = await this.client.request('/api/get-script-source', { instancePath, startLine, endLine });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    if (!instancePath) throw new Error('Instance path is required');
+    const response = await this.client.request('/api/get-script-source', {
+      instancePath, startLine, endLine
+    });
+    return this.formatResponse(response);
   }
 
   async setScriptSource(instancePath: string, source: string) {
     if (!instancePath || typeof source !== 'string') {
-      throw new Error('Instance path and source code string are required for set_script_source');
+      throw new Error('Instance path and source are required');
     }
     const response = await this.client.request('/api/set-script-source', { instancePath, source });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  // Partial Script Editing Tools
-  async editScriptLines(instancePath: string, startLine: number, endLine: number, newContent: string) {
-    if (!instancePath || !startLine || !endLine || typeof newContent !== 'string') {
-      throw new Error('Instance path, startLine, endLine, and newContent are required for edit_script_lines');
+  async editScript(
+    instancePath: string,
+    action: 'replace' | 'insert' | 'delete',
+    options: {
+      startLine: number;
+      endLine?: number;
+      content?: string;
     }
-    const response = await this.client.request('/api/edit-script-lines', { instancePath, startLine, endLine, newContent });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+  ) {
+    if (!instancePath) throw new Error('Instance path is required');
+    if (!options.startLine) throw new Error('startLine is required');
+
+    const response = await this.client.request('/api/edit-script', {
+      instancePath,
+      action,
+      startLine: options.startLine,
+      endLine: options.endLine || options.startLine,
+      content: options.content || ''
+    });
+    return this.formatResponse(response);
   }
 
-  async insertScriptLines(instancePath: string, afterLine: number, newContent: string) {
-    if (!instancePath || typeof newContent !== 'string') {
-      throw new Error('Instance path and newContent are required for insert_script_lines');
+  // ============================================
+  // ATTRIBUTES & TAGS (2 tools)
+  // ============================================
+
+  async attribute(
+    instancePath: string,
+    action: 'get' | 'get_all' | 'set' | 'delete',
+    options?: {
+      name?: string;
+      value?: any;
+      valueType?: string;
     }
-    const response = await this.client.request('/api/insert-script-lines', { instancePath, afterLine: afterLine || 0, newContent });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async deleteScriptLines(instancePath: string, startLine: number, endLine: number) {
-    if (!instancePath || !startLine || !endLine) {
-      throw new Error('Instance path, startLine, and endLine are required for delete_script_lines');
+  ) {
+    if (!instancePath) throw new Error('Instance path is required');
+    if ((action === 'get' || action === 'set' || action === 'delete') && !options?.name) {
+      throw new Error('Attribute name is required for this action');
     }
-    const response = await this.client.request('/api/delete-script-lines', { instancePath, startLine, endLine });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+
+    const response = await this.client.request('/api/attribute', {
+      instancePath,
+      action,
+      attributeName: options?.name,
+      attributeValue: options?.value,
+      valueType: options?.valueType
+    });
+    return this.formatResponse(response);
   }
 
-  // Attribute Tools
-  async getAttribute(instancePath: string, attributeName: string) {
-    if (!instancePath || !attributeName) {
-      throw new Error('Instance path and attribute name are required for get_attribute');
+  async tag(
+    action: 'get' | 'add' | 'remove' | 'find',
+    options: {
+      instancePath?: string;
+      tagName?: string;
     }
-    const response = await this.client.request('/api/get-attribute', { instancePath, attributeName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async setAttribute(instancePath: string, attributeName: string, attributeValue: any, valueType?: string) {
-    if (!instancePath || !attributeName) {
-      throw new Error('Instance path and attribute name are required for set_attribute');
+  ) {
+    if (action === 'find' && !options.tagName) {
+      throw new Error('tagName is required for find action');
     }
-    const response = await this.client.request('/api/set-attribute', { instancePath, attributeName, attributeValue, valueType });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async getAttributes(instancePath: string) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for get_attributes');
+    if ((action === 'get' || action === 'add' || action === 'remove') && !options.instancePath) {
+      throw new Error('instancePath is required for this action');
     }
-    const response = await this.client.request('/api/get-attributes', { instancePath });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async deleteAttribute(instancePath: string, attributeName: string) {
-    if (!instancePath || !attributeName) {
-      throw new Error('Instance path and attribute name are required for delete_attribute');
+    if ((action === 'add' || action === 'remove') && !options.tagName) {
+      throw new Error('tagName is required for add/remove actions');
     }
-    const response = await this.client.request('/api/delete-attribute', { instancePath, attributeName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+
+    const response = await this.client.request('/api/tag', {
+      action,
+      instancePath: options.instancePath,
+      tagName: options.tagName
+    });
+    return this.formatResponse(response);
   }
 
-  // Tag Tools (CollectionService)
-  async getTags(instancePath: string) {
-    if (!instancePath) {
-      throw new Error('Instance path is required for get_tags');
-    }
-    const response = await this.client.request('/api/get-tags', { instancePath });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
+  // ============================================
+  // ASSET TOOLS (5 tools)
+  // ============================================
 
-  async addTag(instancePath: string, tagName: string) {
-    if (!instancePath || !tagName) {
-      throw new Error('Instance path and tag name are required for add_tag');
-    }
-    const response = await this.client.request('/api/add-tag', { instancePath, tagName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async removeTag(instancePath: string, tagName: string) {
-    if (!instancePath || !tagName) {
-      throw new Error('Instance path and tag name are required for remove_tag');
-    }
-    const response = await this.client.request('/api/remove-tag', { instancePath, tagName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  async getTagged(tagName: string) {
-    if (!tagName) {
-      throw new Error('Tag name is required for get_tagged');
-    }
-    const response = await this.client.request('/api/get-tagged', { tagName });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
-  }
-
-  // Asset Tools (Studio-side insertion)
   async insertAsset(
     assetId: number,
     parentPath: string = 'game.Workspace',
     position?: { x: number; y: number; z: number }
   ) {
-    if (!assetId) {
-      throw new Error('Asset ID is required for insert_asset');
-    }
+    if (!assetId) throw new Error('Asset ID is required');
     const response = await this.client.request('/api/insert-asset', {
-      assetId,
-      parentPath,
-      position
+      assetId, parentPath, position
     });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 
-  // Asset Tools: Preview asset hierarchy without inserting
   async previewAsset(
     assetId: number,
     includeProperties: boolean = true,
     maxDepth: number = 10
   ) {
-    if (!assetId) {
-      throw new Error('Asset ID is required for preview_asset');
-    }
+    if (!assetId) throw new Error('Asset ID is required');
     const response = await this.client.request('/api/preview-asset', {
-      assetId,
-      includeProperties,
-      maxDepth
+      assetId, includeProperties, maxDepth
     });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response, null, 2)
-        }
-      ]
-    };
+    return this.formatResponse(response);
   }
 }

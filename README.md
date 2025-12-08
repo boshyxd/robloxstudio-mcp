@@ -1,6 +1,6 @@
 # Roblox Studio MCP Server
 
-MCP server for AI-powered Roblox Studio integration. 40 specialized tools for exploring projects, analyzing scripts, managing assets, and building games autonomously.
+MCP server for AI-powered Roblox Studio integration. 23 consolidated tools for exploring projects, analyzing scripts, managing assets, and building games autonomously.
 
 <a href="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp/badge" alt="Roblox Studio Server MCP server" />
@@ -130,12 +130,12 @@ graph TB
         STUDIO["Roblox Studio<br/>APIs & Data"]
     end
     
-    subgraph TOOLS ["40 AI Tools"]
-        FILE["File System<br/>Trees, Search"]
-        CONTEXT["Studio Context<br/>Services, Objects"]
-        PROPS["Properties<br/>Get, Set, Mass Ops"]
-        CREATE["Object Creation<br/>Single, Mass, Properties"]
-        PROJECT["Project Analysis<br/>Smart Structure"]
+    subgraph TOOLS ["23 AI Tools"]
+        FILE["Exploration<br/>7 tools"]
+        SEARCH["Search<br/>1 unified tool"]
+        PROPS["Properties<br/>2 tools (batch)"]
+        CREATE["Objects<br/>3 tools (batch)"]
+        SCRIPTS["Scripts<br/>3 tools"]
     end
     
     AI -->|stdio| MCP
@@ -150,10 +150,10 @@ graph TB
     MCP -->|Tool Result| AI
     
     MCP -.->|Exposes| FILE
-    MCP -.->|Exposes| CONTEXT  
+    MCP -.->|Exposes| SEARCH  
     MCP -.->|Exposes| PROPS
     MCP -.->|Exposes| CREATE
-    MCP -.->|Exposes| PROJECT
+    MCP -.->|Exposes| SCRIPTS
     
     classDef aiStyle fill:#1e39af,stroke:#3b82f6,stroke-width:2px,color:#ffffff
     classDef mcpStyle fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#ffffff
@@ -167,86 +167,116 @@ graph TB
     class HTTP,QUEUE httpStyle
     class PLUGIN pluginStyle
     class STUDIO studioStyle
-    class FILE,CONTEXT,PROPS,CREATE,PROJECT toolStyle
+    class FILE,SEARCH,PROPS,CREATE,SCRIPTS toolStyle
 ```
 
 ### Key Components:
-- MCP Server (Node.js/TypeScript) - Exposes 40 tools via stdio
+- MCP Server (Node.js/TypeScript) - Exposes 23 tools via stdio
 - HTTP Bridge - Request/response queue on localhost:3002
 - Studio Plugin (Luau) - Polls server and executes API calls
 - Smart Caching - Efficient data transfer
 
-## 40 AI Tools
+## 23 Consolidated Tools
 
-### File System Tools
-- `get_file_tree` - Complete project hierarchy with scripts, models, folders
-- `search_files` - Find files by name, type, or content patterns  
+### Exploration (7 tools)
+| Tool | Description |
+|------|-------------|
+| `get_file_tree` | Complete project hierarchy with scripts, models, folders |
+| `get_place_info` | Place ID, name, game settings, workspace info |
+| `get_services` | All Roblox services and their child counts |
+| `get_project_structure` | Smart hierarchy with depth control (recommended: 5-10) |
+| `get_instance_properties` | Complete property dump for any object |
+| `get_instance_children` | Child objects with metadata |
+| `get_class_info` | Available properties/methods for Roblox classes |
 
-### Studio Context Tools  
-- `get_place_info` - Place ID, name, game settings, workspace info
-- `get_services` - All Roblox services and their child counts
-- `search_objects` - Find instances by name, class, or properties
+### Search (1 unified tool)
+| Tool | Description |
+|------|-------------|
+| `search` | Find instances by name, class, property, or script content |
 
-### Instance & Property Tools
-- `get_instance_properties` - Complete property dump for any object
-- `get_instance_children` - Child objects with metadata
-- `search_by_property` - Find objects with specific property values
-- `get_class_info` - Available properties/methods for Roblox classes
+```typescript
+// Search examples
+search({ query: "Part", searchType: "name" })
+search({ query: "BasePart", searchType: "class" })
+search({ query: "true", searchType: "property", propertyName: "Anchored" })
+search({ query: "print", searchType: "content" })
+```
 
-### Property Modification Tools 
-- `set_property` - Set a property on any Roblox instance
-- `mass_set_property` - Set the same property on multiple instances
-- `mass_get_property` - Get the same property from multiple instances
+### Properties (2 tools with batch support)
+| Tool | Description |
+|------|-------------|
+| `get_property` | Get property value(s) - accepts single path or array |
+| `set_property` | Set property value(s) - supports formulas, relative ops, batch |
 
-### Object Creation Tools
-- `create_object` - Create a new Roblox object instance
-- `create_object_with_properties` - Create objects with initial properties
-- `mass_create_objects` - Create multiple objects at once
-- `mass_create_objects_with_properties` - Create multiple objects with properties
-- `delete_object` - Delete a Roblox object instance
+```typescript
+// Single or batch property operations
+set_property({ paths: "game.Workspace.Part", propertyName: "Transparency", propertyValue: 0.5 })
+set_property({ paths: ["Part1", "Part2"], propertyName: "Color", propertyValue: "1,0,0" })
+set_property({ paths: ["Part1", "Part2"], propertyName: "Position", operation: "add", component: "Y", propertyValue: 10 })
+set_property({ paths: ["Part1", "Part2"], propertyName: "Size", formula: "index * 2" })
+```
 
-### Duplication Tools
-- `smart_duplicate` - Duplicate with naming patterns, position/rotation offsets, property variations
-- `mass_duplicate` - Perform multiple smart duplications at once
+### Objects (3 tools with batch support)
+| Tool | Description |
+|------|-------------|
+| `create` | Create object(s) with optional properties - single or batch |
+| `delete` | Delete object(s) - single or batch |
+| `duplicate` | Smart duplicate with patterns, offsets, variations - single or batch |
 
-### Advanced Property Tools
-- `set_calculated_property` - Set properties using mathematical formulas
-- `set_relative_property` - Modify properties relative to current values (add, multiply, etc.)
+```typescript
+// Create single or batch
+create({ objects: { className: "Part", parent: "game.Workspace", name: "MyPart", properties: { Size: "4,1,2" } } })
+create({ objects: [{ className: "Part", parent: "game.Workspace" }, { className: "Part", parent: "game.Workspace" }] })
 
-### Project Analysis Tools
-- `get_project_structure` - Smart hierarchy with depth control (recommended: 5-10)
+// Duplicate with options
+duplicate({ duplications: { instancePath: "game.Workspace.Part", count: 5, options: { namePattern: "Part_{n}", positionOffset: [0, 5, 0] } } })
+```
 
-### Script Management Tools
-- `get_script_source` - Read script source code with optional line ranges
-- `set_script_source` - Update entire script source code
-- `edit_script_lines` - Replace specific lines in a script
-- `insert_script_lines` - Insert new lines after a specific line
-- `delete_script_lines` - Delete a range of lines from a script
+### Scripts (3 tools)
+| Tool | Description |
+|------|-------------|
+| `get_script_source` | Read script source with optional line ranges |
+| `set_script_source` | Replace entire script source |
+| `edit_script` | Partial edits: replace, insert, or delete lines |
 
-### Asset Tools (Open Cloud)
-- `search_assets` - Search Creator Store for models, audio, etc.
-- `get_asset_details` - Get detailed asset metadata
-- `get_asset_thumbnail` - Get asset preview image (visible to LLM)
-- `preview_asset` - Preview asset hierarchy/properties without inserting (loads temporarily, cleans up)
-- `insert_asset` - Insert asset into Studio by ID
+```typescript
+edit_script({ instancePath: "game.ServerScriptService.Script", action: "replace", startLine: 5, endLine: 10, content: "-- new code" })
+edit_script({ instancePath: "game.ServerScriptService.Script", action: "insert", startLine: 5, content: "print('hello')" })
+edit_script({ instancePath: "game.ServerScriptService.Script", action: "delete", startLine: 5, endLine: 10 })
+```
 
-### Attribute & Tag Tools
-- `get_attribute`, `set_attribute`, `get_attributes`, `delete_attribute`
-- `get_tags`, `add_tag`, `remove_tag`, `get_tagged`
+### Attributes & Tags (2 unified tools)
+| Tool | Description |
+|------|-------------|
+| `attribute` | Get, set, delete, or list all attributes on an instance |
+| `tag` | Get, add, remove tags, or find instances by tag |
 
-> Note: Requires `ROBLOX_OPEN_CLOUD_API_KEY` environment variable for asset search tools.
+```typescript
+attribute({ instancePath: "game.Workspace.Part", action: "set", name: "Health", value: 100 })
+attribute({ instancePath: "game.Workspace.Part", action: "get_all" })
+tag({ action: "add", instancePath: "game.Workspace.Part", tagName: "Enemy" })
+tag({ action: "find", tagName: "Enemy" })
+```
+
+### Assets (5 tools)
+| Tool | Description |
+|------|-------------|
+| `search_assets` | Search Creator Store for models, audio, etc. |
+| `get_asset_details` | Get detailed asset metadata |
+| `get_asset_thumbnail` | Get asset preview image (visible to LLM) |
+| `preview_asset` | Preview asset hierarchy without inserting |
+| `insert_asset` | Insert asset into Studio by ID |
+
+> Note: `search_assets`, `get_asset_details`, and `get_asset_thumbnail` require `ROBLOX_OPEN_CLOUD_API_KEY` environment variable.
 
 ## AI-Optimized Features
 
-### Mass Operations (v1.3.0)
-- Bulk property editing
-- Mass object creation
-- Batch property reading
-- Atomic undo/redo operations
+### Batch Operations (v2.0.0)
+All modification tools accept single items OR arrays for efficient batch processing:
 
 ```typescript
-// Example: Set multiple parts to red
-mass_set_property(["game.Workspace.Part1", "game.Workspace.Part2"], "BrickColor", "Really red")
+// Example: Set multiple parts to red (single call)
+set_property({ paths: ["game.Workspace.Part1", "game.Workspace.Part2"], propertyName: "BrickColor", propertyValue: "Really red" })
 ```
 
 ### Smart Project Structure
