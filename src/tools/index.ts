@@ -59,10 +59,10 @@ export class RobloxStudioTools {
   }
 
   async searchObjects(query: string, searchType: string = 'name', propertyName?: string) {
-    const response = await this.client.request('/api/search-objects', { 
-      query, 
-      searchType, 
-      propertyName 
+    const response = await this.client.request('/api/search-objects', {
+      query,
+      searchType,
+      propertyName
     });
     return {
       content: [
@@ -109,9 +109,9 @@ export class RobloxStudioTools {
     if (!propertyName || !propertyValue) {
       throw new Error('Property name and value are required for search_by_property');
     }
-    const response = await this.client.request('/api/search-by-property', { 
-      propertyName, 
-      propertyValue 
+    const response = await this.client.request('/api/search-by-property', {
+      propertyName,
+      propertyValue
     });
     return {
       content: [
@@ -140,10 +140,10 @@ export class RobloxStudioTools {
 
   // Project Tools
   async getProjectStructure(path?: string, maxDepth?: number, scriptsOnly?: boolean) {
-    const response = await this.client.request('/api/project-structure', { 
-      path, 
-      maxDepth, 
-      scriptsOnly 
+    const response = await this.client.request('/api/project-structure', {
+      path,
+      maxDepth,
+      scriptsOnly
     });
     return {
       content: [
@@ -161,10 +161,10 @@ export class RobloxStudioTools {
     if (!instancePath || !propertyName) {
       throw new Error('Instance path and property name are required for set_property');
     }
-    const response = await this.client.request('/api/set-property', { 
-      instancePath, 
-      propertyName, 
-      propertyValue 
+    const response = await this.client.request('/api/set-property', {
+      instancePath,
+      propertyName,
+      propertyValue
     });
     return {
       content: [
@@ -180,10 +180,10 @@ export class RobloxStudioTools {
     if (!paths || paths.length === 0 || !propertyName) {
       throw new Error('Paths array and property name are required for mass_set_property');
     }
-    const response = await this.client.request('/api/mass-set-property', { 
-      paths, 
-      propertyName, 
-      propertyValue 
+    const response = await this.client.request('/api/mass-set-property', {
+      paths,
+      propertyName,
+      propertyValue
     });
     return {
       content: [
@@ -199,8 +199,8 @@ export class RobloxStudioTools {
     if (!paths || paths.length === 0 || !propertyName) {
       throw new Error('Paths array and property name are required for mass_get_property');
     }
-    const response = await this.client.request('/api/mass-get-property', { 
-      paths, 
+    const response = await this.client.request('/api/mass-get-property', {
+      paths,
       propertyName
     });
     return {
@@ -218,9 +218,9 @@ export class RobloxStudioTools {
     if (!className || !parent) {
       throw new Error('Class name and parent are required for create_object');
     }
-    const response = await this.client.request('/api/create-object', { 
-      className, 
-      parent, 
+    const response = await this.client.request('/api/create-object', {
+      className,
+      parent,
       name
     });
     return {
@@ -237,11 +237,11 @@ export class RobloxStudioTools {
     if (!className || !parent) {
       throw new Error('Class name and parent are required for create_object_with_properties');
     }
-    const response = await this.client.request('/api/create-object', { 
-      className, 
-      parent, 
-      name, 
-      properties 
+    const response = await this.client.request('/api/create-object', {
+      className,
+      parent,
+      name,
+      properties
     });
     return {
       content: [
@@ -253,7 +253,7 @@ export class RobloxStudioTools {
     };
   }
 
-  async massCreateObjects(objects: Array<{className: string, parent: string, name?: string}>) {
+  async massCreateObjects(objects: Array<{ className: string, parent: string, name?: string }>) {
     if (!objects || objects.length === 0) {
       throw new Error('Objects array is required for mass_create_objects');
     }
@@ -268,7 +268,7 @@ export class RobloxStudioTools {
     };
   }
 
-  async massCreateObjectsWithProperties(objects: Array<{className: string, parent: string, name?: string, properties?: Record<string, any>}>) {
+  async massCreateObjectsWithProperties(objects: Array<{ className: string, parent: string, name?: string, properties?: Record<string, any> }>) {
     if (!objects || objects.length === 0) {
       throw new Error('Objects array is required for mass_create_objects_with_properties');
     }
@@ -300,8 +300,8 @@ export class RobloxStudioTools {
 
   // Smart Duplication Tools
   async smartDuplicate(
-    instancePath: string, 
-    count: number, 
+    instancePath: string,
+    count: number,
     options?: {
       namePattern?: string; // e.g., "Button{n}" where {n} is replaced with index
       positionOffset?: [number, number, number]; // X, Y, Z offset per duplicate
@@ -314,10 +314,10 @@ export class RobloxStudioTools {
     if (!instancePath || count < 1) {
       throw new Error('Instance path and count > 0 are required for smart_duplicate');
     }
-    const response = await this.client.request('/api/smart-duplicate', { 
-      instancePath, 
-      count, 
-      options 
+    const response = await this.client.request('/api/smart-duplicate', {
+      instancePath,
+      count,
+      options
     });
     return {
       content: [
@@ -359,17 +359,17 @@ export class RobloxStudioTools {
 
   // Calculated Property Tools
   async setCalculatedProperty(
-    paths: string[], 
-    propertyName: string, 
+    paths: string[],
+    propertyName: string,
     formula: string,
     variables?: Record<string, any>
   ) {
     if (!paths || paths.length === 0 || !propertyName || !formula) {
       throw new Error('Paths, property name, and formula are required for set_calculated_property');
     }
-    const response = await this.client.request('/api/set-calculated-property', { 
-      paths, 
-      propertyName, 
+    const response = await this.client.request('/api/set-calculated-property', {
+      paths,
+      propertyName,
       formula,
       variables
     });
@@ -385,8 +385,8 @@ export class RobloxStudioTools {
 
   // Relative Property Tools
   async setRelativeProperty(
-    paths: string[], 
-    propertyName: string, 
+    paths: string[],
+    propertyName: string,
     operation: 'add' | 'multiply' | 'divide' | 'subtract' | 'power',
     value: any,
     component?: 'X' | 'Y' | 'Z' // For Vector3/UDim2 properties
@@ -394,9 +394,9 @@ export class RobloxStudioTools {
     if (!paths || paths.length === 0 || !propertyName || !operation || value === undefined) {
       throw new Error('Paths, property name, operation, and value are required for set_relative_property');
     }
-    const response = await this.client.request('/api/set-relative-property', { 
-      paths, 
-      propertyName, 
+    const response = await this.client.request('/api/set-relative-property', {
+      paths,
+      propertyName,
       operation,
       value,
       component
@@ -600,6 +600,54 @@ export class RobloxStudioTools {
       throw new Error('Tag name is required for get_tagged');
     }
     const response = await this.client.request('/api/get-tagged', { tagName });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  // Asset Tools (Studio-side insertion)
+  async insertAsset(
+    assetId: number,
+    parentPath: string = 'game.Workspace',
+    position?: { x: number; y: number; z: number }
+  ) {
+    if (!assetId) {
+      throw new Error('Asset ID is required for insert_asset');
+    }
+    const response = await this.client.request('/api/insert-asset', {
+      assetId,
+      parentPath,
+      position
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
+
+  // Asset Tools: Preview asset hierarchy without inserting
+  async previewAsset(
+    assetId: number,
+    includeProperties: boolean = true,
+    maxDepth: number = 10
+  ) {
+    if (!assetId) {
+      throw new Error('Asset ID is required for preview_asset');
+    }
+    const response = await this.client.request('/api/preview-asset', {
+      assetId,
+      includeProperties,
+      maxDepth
+    });
     return {
       content: [
         {
