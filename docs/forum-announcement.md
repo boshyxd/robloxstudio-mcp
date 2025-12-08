@@ -14,7 +14,7 @@
 
 **Connect AI assistants like Claude to your Roblox Studio projects**
 
-*20+ tools for project analysis, script editing, and bulk operations*
+*40 tools for project analysis, script editing, asset management, and bulk operations*
 
 </div>
 
@@ -97,7 +97,7 @@ That's it! The plugin shows "Connected" when ready.
 - Read and edit scripts programmatically
 
 **What Makes It Different:**
-- 20+ specialized tools for Roblox development
+- 40 specialized tools for Roblox development
 - Script source reading and editing
 - Built specifically for AI assistant integration
 - Pure TypeScript - easy to understand and modify
@@ -125,7 +125,7 @@ That's it! The plugin shows "Connected" when ready.
 - Complete object information
 
 <details>
-<summary><strong>Complete Tool List (20+ tools)</strong></summary>
+<summary><strong>Complete Tool List (40 tools)</strong></summary>
 
 **Analysis & Search:** `get_project_structure`, `search_objects`, `search_files`, `search_by_property`
 
@@ -133,7 +133,11 @@ That's it! The plugin shows "Connected" when ready.
 
 **Creation:** `create_object`, `mass_create_objects`, `smart_duplicate`, `mass_duplicate`
 
-**Scripts:** `get_script_source`, `set_script_source`
+**Scripts:** `get_script_source`, `set_script_source`, `edit_script_lines`, `insert_script_lines`, `delete_script_lines`
+
+**Assets:** `search_assets`, `get_asset_details`, `get_asset_thumbnail`, `preview_asset`, `insert_asset`
+
+**Attributes/Tags:** `get_attribute`, `set_attribute`, `get_attributes`, `delete_attribute`, `get_tags`, `add_tag`, `remove_tag`, `get_tagged`
 
 **Advanced:** `set_calculated_property`, `set_relative_property`, `get_class_info`
 
@@ -153,11 +157,11 @@ That's it! The plugin shows "Connected" when ready.
 
 ## Latest Updates
 
-**Version 1.5.1**
-- Script source editing - Read and modify script code safely  
-- Object duplication with positioning
-- Enhanced project structure analysis
-- Improved mass operations performance
+**Version 1.7.0**
+- Asset tools - Search, preview, and insert Creator Store assets
+- 40 total tools for complete Studio control
+- Vision LLM support - Thumbnails visible to AI
+- Enhanced script editing with line-level control
 
 ---
 

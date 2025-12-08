@@ -20,7 +20,7 @@
 
 **Connect AI assistants like Claude to your Roblox Studio projects**
 
-*20+ tools for project analysis, script editing, and bulk operations*
+*40 tools for project analysis, script editing, asset management, and bulk operations*
 
 </div>
 
@@ -84,7 +84,7 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 - Mass operations (property edits, smart/mass duplication, calculated/relative properties)
 
 <details>
-<summary><strong>Complete Tool List (20+ tools)</strong></summary>
+<summary><strong>Complete Tool List (40 tools)</strong></summary>
 
 **Analysis & Search:** `get_project_structure`, `search_objects`, `search_files`, `search_by_property`
 
@@ -92,7 +92,11 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 
 **Creation:** `create_object`, `mass_create_objects`, `smart_duplicate`, `mass_duplicate`
 
-**Scripts:** `get_script_source`, `set_script_source`
+**Scripts:** `get_script_source`, `set_script_source`, `edit_script_lines`, `insert_script_lines`, `delete_script_lines`
+
+**Assets:** `search_assets`, `get_asset_details`, `get_asset_thumbnail`, `preview_asset`, `insert_asset`
+
+**Attributes/Tags:** `get_attribute`, `set_attribute`, `get_attributes`, `delete_attribute`, `get_tags`, `add_tag`, `remove_tag`, `get_tagged`
 
 **Advanced:** `set_calculated_property`, `set_relative_property`, `get_class_info`
 
@@ -108,11 +112,11 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 
 ## Latest Updates
 
-### v1.6.0
-- ModuleScript support (Script, LocalScript, ModuleScript)
-- Content search includes ModuleScripts
-- `set_property` supports `Source` on any `LuaSourceContainer`
-- HTTP parity: `/mcp/get_script_source`, `/mcp/set_script_source`
+### v1.7.0
+- Asset tools - Search, preview, and insert Creator Store assets
+- 40 total tools for complete Studio control
+- Vision LLM support - Thumbnails visible to AI
+- Enhanced script editing with line-level operations
 
 ---
 
