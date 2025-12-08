@@ -1,6 +1,6 @@
 # Roblox Studio MCP Server
 
-MCP server for AI-powered Roblox Studio integration. 18 specialized tools for exploring projects, analyzing scripts, and performing bulk operations.
+MCP server for AI-powered Roblox Studio integration. 40 specialized tools for exploring projects, analyzing scripts, managing assets, and building games autonomously.
 
 <a href="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp/badge" alt="Roblox Studio Server MCP server" />
@@ -62,6 +62,52 @@ The MCP server requires a companion Roblox Studio plugin:
 - Click the "MCP Server" button in the Plugins toolbar
 - Status should show "Connected" when working
 
+## Asset Tools Setup (Optional)
+
+To use asset search, preview, and insertion tools, you need:
+
+### 1. Open Cloud API Key (for search/details/thumbnail)
+
+1. Go to [Roblox Creator Hub](https://create.roblox.com/dashboard/credentials)
+2. Click **"Create API Key"**
+3. In **Access Permissions** add **creator-store-products** with **Read** access (creator-store-product:read)
+4. Copy your API key
+
+**Set the environment variable in your MCP config:**
+
+**For Claude Code users:**
+
+```bash
+claude mcp add robloxstudio --env ROBLOX_OPEN_CLOUD_API_KEY=YOUR_KEY -- npx -y robloxstudio-mcp
+```
+
+**For other MCP clients (Claude Desktop, etc.):**
+
+```json
+{
+  "mcpServers": {
+    "robloxstudio-mcp": {
+      "command": "npx",
+      "args": ["-y", "robloxstudio-mcp"],
+      "description": "Advanced Roblox Studio integration for AI assistants",
+      "env": {
+        "ROBLOX_OPEN_CLOUD_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+### 2. Enable Third-Party Assets (for preview/insert)
+
+To insert assets from the Creator Store into your game:
+
+1. Open your game in Roblox Studio
+2. Go to **Game Settings** → **Security**
+3. Enable **"Allow Loading Third Party Assets"**
+
+> **Note:** Without this setting, `preview_asset` and `insert_asset` will fail with authorization errors.
+
 ## Architecture Overview
 
 Dual-component system bridging Roblox Studio with AI assistants:
@@ -84,7 +130,7 @@ graph TB
         STUDIO["Roblox Studio<br/>APIs & Data"]
     end
     
-    subgraph TOOLS ["18 AI Tools"]
+    subgraph TOOLS ["40 AI Tools"]
         FILE["File System<br/>Trees, Search"]
         CONTEXT["Studio Context<br/>Services, Objects"]
         PROPS["Properties<br/>Get, Set, Mass Ops"]
@@ -109,7 +155,7 @@ graph TB
     MCP -.->|Exposes| CREATE
     MCP -.->|Exposes| PROJECT
     
-    classDef aiStyle fill:#1e40af,stroke:#3b82f6,stroke-width:2px,color:#ffffff
+    classDef aiStyle fill:#1e39af,stroke:#3b82f6,stroke-width:2px,color:#ffffff
     classDef mcpStyle fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#ffffff
     classDef httpStyle fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#ffffff
     classDef pluginStyle fill:#059669,stroke:#10b981,stroke-width:2px,color:#ffffff
@@ -125,12 +171,12 @@ graph TB
 ```
 
 ### Key Components:
-- MCP Server (Node.js/TypeScript) - Exposes 18 tools via stdio
+- MCP Server (Node.js/TypeScript) - Exposes 40 tools via stdio
 - HTTP Bridge - Request/response queue on localhost:3002
 - Studio Plugin (Luau) - Polls server and executes API calls
 - Smart Caching - Efficient data transfer
 
-## 18 AI Tools
+## 40 AI Tools
 
 ### File System Tools
 - `get_file_tree` - Complete project hierarchy with scripts, models, folders
@@ -159,10 +205,36 @@ graph TB
 - `mass_create_objects_with_properties` - Create multiple objects with properties
 - `delete_object` - Delete a Roblox object instance
 
+### Duplication Tools
+- `smart_duplicate` - Duplicate with naming patterns, position/rotation offsets, property variations
+- `mass_duplicate` - Perform multiple smart duplications at once
+
+### Advanced Property Tools
+- `set_calculated_property` - Set properties using mathematical formulas
+- `set_relative_property` - Modify properties relative to current values (add, multiply, etc.)
+
 ### Project Analysis Tools
 - `get_project_structure` - Smart hierarchy with depth control (recommended: 5-10)
 
-> Note: Previous tools removed: `get_file_content`, `get_file_properties`, `get_selection`, `get_dependencies`, `validate_references`. Use Rojo/Argon workflows instead.
+### Script Management Tools
+- `get_script_source` - Read script source code with optional line ranges
+- `set_script_source` - Update entire script source code
+- `edit_script_lines` - Replace specific lines in a script
+- `insert_script_lines` - Insert new lines after a specific line
+- `delete_script_lines` - Delete a range of lines from a script
+
+### Asset Tools (Open Cloud)
+- `search_assets` - Search Creator Store for models, audio, etc.
+- `get_asset_details` - Get detailed asset metadata
+- `get_asset_thumbnail` - Get asset preview image (visible to LLM)
+- `preview_asset` - Preview asset hierarchy/properties without inserting (loads temporarily, cleans up)
+- `insert_asset` - Insert asset into Studio by ID
+
+### Attribute & Tag Tools
+- `get_attribute`, `set_attribute`, `get_attributes`, `delete_attribute`
+- `get_tags`, `add_tag`, `remove_tag`, `get_tagged`
+
+> Note: Requires `ROBLOX_OPEN_CLOUD_API_KEY` environment variable for asset search tools.
 
 ## AI-Optimized Features
 
@@ -193,11 +265,12 @@ mass_set_property(["game.Workspace.Part1", "game.Workspace.Part2"], "BrickColor"
 
 ### Commands
 ```bash
-npm run dev         # Development server with hot reload  
-npm run build       # Production build
-npm start           # Run built server
-npm run lint        # ESLint code quality
-npm run typecheck   # TypeScript validation
+npm run dev           # Development server with hot reload  
+npm run build         # Production build
+npm run bundle-plugin # Regenerate MCPPlugin.rbxmx from plugin.luau
+npm start             # Run built server
+npm run lint          # ESLint code quality
+npm run typecheck     # TypeScript validation
 ```
 
 ### Plugin Development
