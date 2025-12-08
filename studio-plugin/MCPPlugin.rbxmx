@@ -1,13 +1,18 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
-	<External>null</External>
-	<External>nil</External>
-	<Item class="Script" referent="RBXB5753B8B277D4D56990F9119C8E352B8">
+	<Item class="Script" referent="RBX8A31D824702048E19F5C5B17B809F408">
 		<Properties>
+			<BinaryString name="AttributesSerialize"></BinaryString>
+			<bool name="Disabled">false</bool>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">RobloxStudioMCP</string>
+			<string name="ScriptGuid">{753B2551-308E-47CC-8FDE-2A4936DC6678}</string>
 			<ProtectedString name="Source"><![CDATA[local HttpService = game:GetService("HttpService")
 local StudioService = game:GetService("StudioService")
 local Selection = game:GetService("Selection")
 local RunService = game:GetService("RunService")
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local ScriptEditorService = game:GetService("ScriptEditorService")
+local CollectionService = game:GetService("CollectionService")
 
 local toolbar = plugin:CreateToolbar("MCP Integration")
 local button =
@@ -34,7 +39,7 @@ local screenGui = plugin:CreateDockWidgetPluginGui(
 	"MCPServerInterface",
 	DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 400, 500, 350, 450)
 )
-screenGui.Title = "MCP Server v1.6.1"
+screenGui.Title = "MCP Server v1.7.0"
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -87,7 +92,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(1, 0, 0, 16)
 versionLabel.Position = UDim2.new(0, 0, 0, 32)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "AI Integration • v1.6.1"
+versionLabel.Text = "AI Integration • v1.7.0"
 versionLabel.TextColor3 = Color3.fromRGB(191, 219, 254)
 versionLabel.TextScaled = false
 versionLabel.TextSize = 12
@@ -289,35 +294,35 @@ stepsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 stepsLayout.Parent = stepsFrame
 
 local function createStepRow(text)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 16)
-	row.BackgroundTransparency = 1
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 16)
+    row.BackgroundTransparency = 1
 
-	local dot = Instance.new("Frame")
-	dot.Size = UDim2.new(0, 10, 0, 10)
-	dot.Position = UDim2.new(0, 0, 0, 3)
-	dot.BackgroundColor3 = Color3.fromRGB(156, 163, 175)
-	dot.BorderSizePixel = 0
-	dot.Parent = row
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 10, 0, 10)
+    dot.Position = UDim2.new(0, 0, 0, 3)
+    dot.BackgroundColor3 = Color3.fromRGB(156, 163, 175)
+    dot.BorderSizePixel = 0
+    dot.Parent = row
 
-	local dotCorner = Instance.new("UICorner")
-	dotCorner.CornerRadius = UDim.new(1, 0)
-	dotCorner.Parent = dot
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    dotCorner.Parent = dot
 
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -18, 1, 0)
-	label.Position = UDim2.new(0, 18, 0, 0)
-	label.BackgroundTransparency = 1
-	label.Text = text
-	label.TextColor3 = Color3.fromRGB(209, 213, 219)
-	label.TextScaled = false
-	label.TextSize = 11
-	label.Font = Enum.Font.Jura
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = row
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -18, 1, 0)
+    label.Position = UDim2.new(0, 18, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(209, 213, 219)
+    label.TextScaled = false
+    label.TextSize = 11
+    label.Font = Enum.Font.Jura
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
 
-	row.Parent = stepsFrame
-	return row, dot, label
+    row.Parent = stepsFrame
+    return row, dot, label
 end
 
 local step1Row, step1Dot, step1Label = createStepRow("1. HTTP server reachable")
@@ -379,7 +384,7 @@ local function createPulseAnimation()
 		end)
 		pulseAnimation = nil
 	end
-
+	
 	pcall(function()
 		pulseAnimation = TweenService:Create(statusPulse, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
 			Size = UDim2.new(0, 24, 0, 24),
@@ -387,7 +392,7 @@ local function createPulseAnimation()
 			BackgroundTransparency = 1
 		})
 	end)
-
+	
 	return pulseAnimation
 end
 
@@ -459,7 +464,7 @@ local function pollForRequests()
 		pluginState.lastHttpOk = true
 		step1Dot.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
 		step1Label.Text = "1. HTTP server reachable (OK)"
-
+		
 		if mcpConnected and not statusLabel.Text:find("Connected") then
 			statusLabel.Text = "Connected"
 			statusLabel.TextColor3 = Color3.fromRGB(34, 197, 94)
@@ -566,7 +571,7 @@ local function pollForRequests()
 			troubleshootLabel.Visible = false
 			startPulseAnimation()
 		end
-	end
+end
 end
 
 sendResponse = function(requestId, responseData)
@@ -635,6 +640,36 @@ processRequest = function(request)
 		return handlers.getScriptSource(data)
 	elseif endpoint == "/api/set-script-source" then
 		return handlers.setScriptSource(data)
+	-- Partial script editing endpoints
+	elseif endpoint == "/api/edit-script-lines" then
+		return handlers.editScriptLines(data)
+	elseif endpoint == "/api/insert-script-lines" then
+		return handlers.insertScriptLines(data)
+	elseif endpoint == "/api/delete-script-lines" then
+		return handlers.deleteScriptLines(data)
+	-- Attribute endpoints
+	elseif endpoint == "/api/get-attribute" then
+		return handlers.getAttribute(data)
+	elseif endpoint == "/api/set-attribute" then
+		return handlers.setAttribute(data)
+	elseif endpoint == "/api/get-attributes" then
+		return handlers.getAttributes(data)
+	elseif endpoint == "/api/delete-attribute" then
+		return handlers.deleteAttribute(data)
+	-- Tag endpoints
+	elseif endpoint == "/api/get-tags" then
+		return handlers.getTags(data)
+	elseif endpoint == "/api/add-tag" then
+		return handlers.addTag(data)
+	elseif endpoint == "/api/remove-tag" then
+		return handlers.removeTag(data)
+	elseif endpoint == "/api/get-tagged" then
+		return handlers.getTagged(data)
+	-- Asset insertion endpoint
+	elseif endpoint == "/api/insert-asset" then
+		return handlers.insertAsset(data)
+	elseif endpoint == "/api/preview-asset" then
+		return handlers.previewAsset(data)
 	else
 		return { error = "Unknown endpoint: " .. tostring(endpoint) }
 	end
@@ -1368,7 +1403,7 @@ handlers.createObject = function(requestData)
 
 	local success, newInstance = pcall(function()
 		local instance = Instance.new(className)
-
+		
 		if name then
 			instance.Name = name
 		end
@@ -1459,7 +1494,7 @@ handlers.massSetProperty = function(requestData)
 			local success, err = pcall(function()
 				instance[propertyName] = propertyValue
 			end)
-
+			
 			if success then
 				successCount = successCount + 1
 				table.insert(results, {
@@ -1516,7 +1551,7 @@ handlers.massGetProperty = function(requestData)
 			local success, value = pcall(function()
 				return instance[propertyName]
 			end)
-
+			
 			if success then
 				table.insert(results, {
 					path = path,
@@ -1646,7 +1681,7 @@ handlers.massCreateObjectsWithProperties = function(requestData)
 			if parentInstance then
 				local success, newInstance = pcall(function()
 					local instance = Instance.new(className)
-
+					
 					if name then
 						instance.Name = name
 					end
@@ -1732,7 +1767,7 @@ handlers.smartDuplicate = function(requestData)
 	for i = 1, count do
 		local success, newInstance = pcall(function()
 			local clone = instance:Clone()
-
+			
 			if options.namePattern then
 				clone.Name = options.namePattern:gsub("{n}", tostring(i))
 			else
@@ -1841,7 +1876,7 @@ handlers.massDuplicate = function(requestData)
 	for _, duplication in ipairs(duplications) do
 		local result = handlers.smartDuplicate(duplication)
 		table.insert(allResults, result)
-
+		
 		if result.summary then
 			totalSuccess = totalSuccess + result.summary.succeeded
 			totalFailures = totalFailures + result.summary.failed
@@ -1863,11 +1898,11 @@ handlers.massDuplicate = function(requestData)
 end
 
 local function evaluateFormula(formula, variables, instance, index)
-
+	
 	local value = formula
-
+	
 	value = value:gsub("index", tostring(index))
-
+	
 	if instance and instance:IsA("BasePart") then
 		local pos = instance.Position
 		local size = instance.Size
@@ -1879,47 +1914,47 @@ local function evaluateFormula(formula, variables, instance, index)
 		value = value:gsub("Size%.Z", tostring(size.Z))
 		value = value:gsub("magnitude", tostring(pos.magnitude))
 	end
-
+	
 	if variables then
 		for k, v in pairs(variables) do
 			value = value:gsub(k, tostring(v))
 		end
 	end
-
+	
 	value = value:gsub("sin%(([%d%.%-]+)%)", function(x) return tostring(math.sin(tonumber(x) or 0)) end)
 	value = value:gsub("cos%(([%d%.%-]+)%)", function(x) return tostring(math.cos(tonumber(x) or 0)) end)
 	value = value:gsub("sqrt%(([%d%.%-]+)%)", function(x) return tostring(math.sqrt(tonumber(x) or 0)) end)
 	value = value:gsub("abs%(([%d%.%-]+)%)", function(x) return tostring(math.abs(tonumber(x) or 0)) end)
 	value = value:gsub("floor%(([%d%.%-]+)%)", function(x) return tostring(math.floor(tonumber(x) or 0)) end)
 	value = value:gsub("ceil%(([%d%.%-]+)%)", function(x) return tostring(math.ceil(tonumber(x) or 0)) end)
-
+	
 	local result = tonumber(value)
 	if result then
 		return result, nil
 	end
-
+	
 	local success, evalResult = pcall(function()
-
+		
 		local num = tonumber(value)
 		if num then
 			return num
 		end
-
+		
 		local a, b = value:match("^([%d%.%-]+)%s*%*%s*([%d%.%-]+)$")
 		if a and b then
 			return (tonumber(a) or 0) * (tonumber(b) or 0)
 		end
-
+		
 		a, b = value:match("^([%d%.%-]+)%s*%+%s*([%d%.%-]+)$")
 		if a and b then
 			return (tonumber(a) or 0) + (tonumber(b) or 0)
 		end
-
+		
 		a, b = value:match("^([%d%.%-]+)%s*%-%s*([%d%.%-]+)$")
 		if a and b then
 			return (tonumber(a) or 0) - (tonumber(b) or 0)
 		end
-
+		
 		a, b = value:match("^([%d%.%-]+)%s*/%s*([%d%.%-]+)$")
 		if a and b then
 			local divisor = tonumber(b) or 1
@@ -1927,10 +1962,10 @@ local function evaluateFormula(formula, variables, instance, index)
 				return (tonumber(a) or 0) / divisor
 			end
 		end
-
+		
 		error("Unsupported formula pattern: " .. value)
 	end)
-
+	
 	if success and type(evalResult) == "number" then
 		return evalResult, nil
 	else
@@ -1956,12 +1991,12 @@ handlers.setCalculatedProperty = function(requestData)
 		local instance = getInstanceByPath(path)
 		if instance then
 			local value, evalError = evaluateFormula(formula, variables, instance, index)
-
+			
 			if value ~= nil and not evalError then
 				local success, err = pcall(function()
 					instance[propertyName] = value
 				end)
-
+				
 				if success then
 					successCount = successCount + 1
 					table.insert(results, {
@@ -2037,7 +2072,7 @@ handlers.setRelativeProperty = function(requestData)
 				if component and typeof(currentValue) == "Vector3" then
 					local x, y, z = currentValue.X, currentValue.Y, currentValue.Z
 					local targetValue = value
-
+					
 					if component == "X" then
 						if operation == "add" then x = x + targetValue
 						elseif operation == "subtract" then x = x - targetValue
@@ -2060,11 +2095,11 @@ handlers.setRelativeProperty = function(requestData)
 						elseif operation == "power" then z = z ^ targetValue
 						end
 					end
-
+					
 					newValue = Vector3.new(x, y, z)
 				elseif typeof(currentValue) == "Color3" and typeof(value) == "Color3" then
 					local r, g, b = currentValue.R, currentValue.G, currentValue.B
-
+					
 					if operation == "add" then
 						newValue = Color3.new(
 							math.min(1, r + value.R),
@@ -2094,7 +2129,7 @@ handlers.setRelativeProperty = function(requestData)
 					end
 				elseif typeof(currentValue) == "Vector3" and type(value) == "number" then
 					local x, y, z = currentValue.X, currentValue.Y, currentValue.Z
-
+					
 					if operation == "add" then
 						newValue = Vector3.new(x + value, y + value, z + value)
 					elseif operation == "subtract" then
@@ -2113,7 +2148,7 @@ handlers.setRelativeProperty = function(requestData)
 				instance[propertyName] = newValue
 				return newValue
 			end)
-
+			
 			if success then
 				successCount = successCount + 1
 				table.insert(results, {
@@ -2161,6 +2196,8 @@ end
 
 handlers.getScriptSource = function(requestData)
 	local instancePath = requestData.instancePath
+	local startLine = requestData.startLine
+	local endLine = requestData.endLine
 
 	if not instancePath then
 		return { error = "Instance path is required" }
@@ -2176,14 +2213,62 @@ handlers.getScriptSource = function(requestData)
 	end
 
 	local success, result = pcall(function()
+		local fullSource = instance.Source
+		local totalLineCount = select(2, string.gsub(fullSource, '\n', '\n')) + 1
+
+		-- If line range is specified, extract only those lines
+		local sourceToReturn = fullSource
+		local returnedStartLine = 1
+		local returnedEndLine = totalLineCount
+
+		if startLine or endLine then
+			local lines = {}
+			for line in (fullSource .. '\n'):gmatch("([^\n]*)\n") do
+				table.insert(lines, line)
+			end
+
+			local actualStartLine = math.max(1, startLine or 1)
+			local actualEndLine = math.min(#lines, endLine or #lines)
+
+			local selectedLines = {}
+			for i = actualStartLine, actualEndLine do
+				table.insert(selectedLines, lines[i] or "")
+			end
+
+			sourceToReturn = table.concat(selectedLines, '\n')
+			returnedStartLine = actualStartLine
+			returnedEndLine = actualEndLine
+		end
+
 		local resp = {
 			instancePath = instancePath,
 			className = instance.ClassName,
 			name = instance.Name,
-			source = instance.Source,
-			sourceLength = string.len(instance.Source),
-			lineCount = select(2, string.gsub(instance.Source, '\n', '\n')) + 1
+			source = sourceToReturn,
+			sourceLength = string.len(fullSource),
+			lineCount = totalLineCount,
+			-- Line range info
+			startLine = returnedStartLine,
+			endLine = returnedEndLine,
+			isPartial = (startLine ~= nil or endLine ~= nil),
+			-- Helpful metadata for large scripts
+			truncated = false,
 		}
+
+		-- If the source is very large (>50000 chars) and no range specified,
+		-- return first 1000 lines with truncation notice
+		if not startLine and not endLine and string.len(fullSource) > 50000 then
+			local lines = {}
+			for line in (fullSource .. '\n'):gmatch("([^\n]*)\n") do
+				table.insert(lines, line)
+				if #lines >= 1000 then break end
+			end
+			resp.source = table.concat(lines, '\n')
+			resp.truncated = true
+			resp.endLine = math.min(1000, totalLineCount)
+			resp.note = "Script truncated to first 1000 lines. Use startLine/endLine parameters to read specific sections."
+		end
+
 		if instance:IsA("BaseScript") then
 			resp.enabled = instance.Enabled
 		end
@@ -2214,7 +2299,32 @@ handlers.setScriptSource = function(requestData)
 		return { error = "Instance is not a script-like object: " .. instance.ClassName }
 	end
 
-	local success, result = pcall(function()
+	-- Try UpdateSourceAsync first (works with open script editors)
+	local updateSuccess, updateResult = pcall(function()
+		local oldSourceLength = string.len(instance.Source)
+
+		ScriptEditorService:UpdateSourceAsync(instance, function(oldContent)
+			return newSource
+		end)
+
+		ChangeHistoryService:SetWaypoint("Set script source: " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			oldSourceLength = oldSourceLength,
+			newSourceLength = string.len(newSource),
+			method = "UpdateSourceAsync",
+			message = "Script source updated successfully (editor-safe)"
+		}
+	end)
+
+	if updateSuccess then
+		return updateResult
+	end
+
+	-- Fallback to direct assignment if UpdateSourceAsync fails
+	local directSuccess, directResult = pcall(function()
 		local oldSource = instance.Source
 		instance.Source = newSource
 
@@ -2225,53 +2335,894 @@ handlers.setScriptSource = function(requestData)
 			instancePath = instancePath,
 			oldSourceLength = string.len(oldSource),
 			newSourceLength = string.len(newSource),
-			message = "Script source updated successfully"
+			method = "direct",
+			message = "Script source updated successfully (direct assignment)"
+		}
+	end)
+
+	if directSuccess then
+		return directResult
+	end
+
+	-- Final fallback: replace the script entirely
+	local replaceSuccess, replaceResult = pcall(function()
+		local parent = instance.Parent
+		local name = instance.Name
+		local className = instance.ClassName
+		local wasBaseScript = instance:IsA("BaseScript")
+		local enabled
+		if wasBaseScript then
+			enabled = instance.Enabled
+		end
+
+		local newScript = Instance.new(className)
+		newScript.Name = name
+		newScript.Source = newSource
+		if wasBaseScript then
+			newScript.Enabled = enabled
+		end
+
+		newScript.Parent = parent
+		instance:Destroy()
+
+		ChangeHistoryService:SetWaypoint("Replace script: " .. name)
+
+		return {
+			success = true,
+			instancePath = getInstancePath(newScript),
+			method = "replace",
+			message = "Script replaced successfully with new source"
+		}
+	end)
+
+	if replaceSuccess then
+		return replaceResult
+	else
+		return {
+			error = "Failed to set script source. UpdateSourceAsync failed: " .. tostring(updateResult) ..
+			        ". Direct assignment failed: " .. tostring(directResult) ..
+			        ". Replace method failed: " .. tostring(replaceResult)
+		}
+	end
+end
+
+-- Helper function to split source into lines
+local function splitLines(source)
+	local lines = {}
+	for line in (source .. '\n'):gmatch("([^\n]*)\n") do
+		table.insert(lines, line)
+	end
+	return lines
+end
+
+-- Partial Script Editing: Edit specific lines
+handlers.editScriptLines = function(requestData)
+	local instancePath = requestData.instancePath
+	local startLine = requestData.startLine
+	local endLine = requestData.endLine
+	local newContent = requestData.newContent
+
+	if not instancePath or not startLine or not endLine or not newContent then
+		return { error = "Instance path, startLine, endLine, and newContent are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	if not instance:IsA("LuaSourceContainer") then
+		return { error = "Instance is not a script-like object: " .. instance.ClassName }
+	end
+
+	local success, result = pcall(function()
+		local oldSource = instance.Source
+		local lines = splitLines(oldSource)
+		local totalLines = #lines
+
+		if startLine < 1 or startLine > totalLines then
+			error("startLine out of range (1-" .. totalLines .. ")")
+		end
+		if endLine < startLine or endLine > totalLines then
+			error("endLine out of range (" .. startLine .. "-" .. totalLines .. ")")
+		end
+
+		-- Split new content into lines
+		local newLines = splitLines(newContent)
+
+		-- Build new source: lines before + new content + lines after
+		local resultLines = {}
+
+		-- Lines before the edit
+		for i = 1, startLine - 1 do
+			table.insert(resultLines, lines[i])
+		end
+
+		-- New content lines
+		for _, line in ipairs(newLines) do
+			table.insert(resultLines, line)
+		end
+
+		-- Lines after the edit
+		for i = endLine + 1, totalLines do
+			table.insert(resultLines, lines[i])
+		end
+
+		local newSource = table.concat(resultLines, '\n')
+
+		-- Use UpdateSourceAsync for editor compatibility
+		ScriptEditorService:UpdateSourceAsync(instance, function(oldContent)
+			return newSource
+		end)
+
+		ChangeHistoryService:SetWaypoint("Edit script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			editedLines = { startLine = startLine, endLine = endLine },
+			linesRemoved = endLine - startLine + 1,
+			linesAdded = #newLines,
+			newLineCount = #resultLines,
+			message = "Script lines edited successfully"
 		}
 	end)
 
 	if success then
 		return result
 	else
-		local replaceSuccess, replaceResult = pcall(function()
-			local parent = instance.Parent
-			local name = instance.Name
-			local className = instance.ClassName
-			local wasBaseScript = instance:IsA("BaseScript")
-			local enabled
-			if wasBaseScript then
-				enabled = instance.Enabled
-			end
-
-			local newScript = Instance.new(className)
-			newScript.Name = name
-			newScript.Source = newSource
-			if wasBaseScript then
-				newScript.Enabled = enabled
-			end
-
-			newScript.Parent = parent
-			instance:Destroy()
-
-			ChangeHistoryService:SetWaypoint("Replace script: " .. name)
-
-			return {
-				success = true,
-				instancePath = getInstancePath(newScript),
-				method = "replace",
-				message = "Script replaced successfully with new source"
-			}
-		end)
-
-		if replaceSuccess then
-			return replaceResult
-		else
-			return { 
-				error = "Failed to set script source. Direct assignment failed: " .. tostring(result) .. 
-					". Replace method failed: " .. tostring(replaceResult)
-			}
-		end
+		return { error = "Failed to edit script lines: " .. tostring(result) }
 	end
 end
+
+-- Partial Script Editing: Insert lines after a specific line
+handlers.insertScriptLines = function(requestData)
+	local instancePath = requestData.instancePath
+	local afterLine = requestData.afterLine or 0 -- 0 means insert at beginning
+	local newContent = requestData.newContent
+
+	if not instancePath or not newContent then
+		return { error = "Instance path and newContent are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	if not instance:IsA("LuaSourceContainer") then
+		return { error = "Instance is not a script-like object: " .. instance.ClassName }
+	end
+
+	local success, result = pcall(function()
+		local oldSource = instance.Source
+		local lines = splitLines(oldSource)
+		local totalLines = #lines
+
+		if afterLine < 0 or afterLine > totalLines then
+			error("afterLine out of range (0-" .. totalLines .. ")")
+		end
+
+		-- Split new content into lines
+		local newLines = splitLines(newContent)
+
+		-- Build new source
+		local resultLines = {}
+
+		-- Lines before insertion point
+		for i = 1, afterLine do
+			table.insert(resultLines, lines[i])
+		end
+
+		-- New content lines
+		for _, line in ipairs(newLines) do
+			table.insert(resultLines, line)
+		end
+
+		-- Lines after insertion point
+		for i = afterLine + 1, totalLines do
+			table.insert(resultLines, lines[i])
+		end
+
+		local newSource = table.concat(resultLines, '\n')
+
+		-- Use UpdateSourceAsync for editor compatibility
+		ScriptEditorService:UpdateSourceAsync(instance, function(oldContent)
+			return newSource
+		end)
+
+		ChangeHistoryService:SetWaypoint("Insert script lines after line " .. afterLine .. ": " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			insertedAfterLine = afterLine,
+			linesInserted = #newLines,
+			newLineCount = #resultLines,
+			message = "Script lines inserted successfully"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to insert script lines: " .. tostring(result) }
+	end
+end
+
+-- Partial Script Editing: Delete specific lines
+handlers.deleteScriptLines = function(requestData)
+	local instancePath = requestData.instancePath
+	local startLine = requestData.startLine
+	local endLine = requestData.endLine
+
+	if not instancePath or not startLine or not endLine then
+		return { error = "Instance path, startLine, and endLine are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	if not instance:IsA("LuaSourceContainer") then
+		return { error = "Instance is not a script-like object: " .. instance.ClassName }
+	end
+
+	local success, result = pcall(function()
+		local oldSource = instance.Source
+		local lines = splitLines(oldSource)
+		local totalLines = #lines
+
+		if startLine < 1 or startLine > totalLines then
+			error("startLine out of range (1-" .. totalLines .. ")")
+		end
+		if endLine < startLine or endLine > totalLines then
+			error("endLine out of range (" .. startLine .. "-" .. totalLines .. ")")
+		end
+
+		-- Build new source without the deleted lines
+		local resultLines = {}
+
+		for i = 1, startLine - 1 do
+			table.insert(resultLines, lines[i])
+		end
+
+		for i = endLine + 1, totalLines do
+			table.insert(resultLines, lines[i])
+		end
+
+		local newSource = table.concat(resultLines, '\n')
+
+		-- Use UpdateSourceAsync for editor compatibility
+		ScriptEditorService:UpdateSourceAsync(instance, function(oldContent)
+			return newSource
+		end)
+
+		ChangeHistoryService:SetWaypoint("Delete script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			deletedLines = { startLine = startLine, endLine = endLine },
+			linesDeleted = endLine - startLine + 1,
+			newLineCount = #resultLines,
+			message = "Script lines deleted successfully"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to delete script lines: " .. tostring(result) }
+	end
+end
+
+-- Attribute Tools: Get a single attribute
+handlers.getAttribute = function(requestData)
+	local instancePath = requestData.instancePath
+	local attributeName = requestData.attributeName
+
+	if not instancePath or not attributeName then
+		return { error = "Instance path and attribute name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local value = instance:GetAttribute(attributeName)
+		local valueType = typeof(value)
+
+		-- Serialize the value for JSON transport
+		local serializedValue = value
+		if valueType == "Vector3" then
+			serializedValue = { X = value.X, Y = value.Y, Z = value.Z, _type = "Vector3" }
+		elseif valueType == "Color3" then
+			serializedValue = { R = value.R, G = value.G, B = value.B, _type = "Color3" }
+		elseif valueType == "CFrame" then
+			serializedValue = { Position = { X = value.Position.X, Y = value.Position.Y, Z = value.Position.Z }, _type = "CFrame" }
+		elseif valueType == "UDim2" then
+			serializedValue = { X = { Scale = value.X.Scale, Offset = value.X.Offset }, Y = { Scale = value.Y.Scale, Offset = value.Y.Offset }, _type = "UDim2" }
+		elseif valueType == "BrickColor" then
+			serializedValue = { Name = value.Name, _type = "BrickColor" }
+		end
+
+		return {
+			instancePath = instancePath,
+			attributeName = attributeName,
+			value = serializedValue,
+			valueType = valueType,
+			exists = value ~= nil
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to get attribute: " .. tostring(result) }
+	end
+end
+
+-- Attribute Tools: Set an attribute
+handlers.setAttribute = function(requestData)
+	local instancePath = requestData.instancePath
+	local attributeName = requestData.attributeName
+	local attributeValue = requestData.attributeValue
+	local valueType = requestData.valueType -- Optional type hint
+
+	if not instancePath or not attributeName then
+		return { error = "Instance path and attribute name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local value = attributeValue
+
+		-- Handle special type conversions
+		if type(attributeValue) == "table" then
+			if attributeValue._type == "Vector3" or valueType == "Vector3" then
+				value = Vector3.new(attributeValue.X or 0, attributeValue.Y or 0, attributeValue.Z or 0)
+			elseif attributeValue._type == "Color3" or valueType == "Color3" then
+				value = Color3.new(attributeValue.R or 0, attributeValue.G or 0, attributeValue.B or 0)
+			elseif attributeValue._type == "UDim2" or valueType == "UDim2" then
+				value = UDim2.new(
+					attributeValue.X and attributeValue.X.Scale or 0,
+					attributeValue.X and attributeValue.X.Offset or 0,
+					attributeValue.Y and attributeValue.Y.Scale or 0,
+					attributeValue.Y and attributeValue.Y.Offset or 0
+				)
+			elseif attributeValue._type == "BrickColor" or valueType == "BrickColor" then
+				value = BrickColor.new(attributeValue.Name or "Medium stone grey")
+			end
+		end
+
+		instance:SetAttribute(attributeName, value)
+		ChangeHistoryService:SetWaypoint("Set attribute " .. attributeName .. " on " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			attributeName = attributeName,
+			value = attributeValue,
+			message = "Attribute set successfully"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to set attribute: " .. tostring(result) }
+	end
+end
+
+-- Attribute Tools: Get all attributes
+handlers.getAttributes = function(requestData)
+	local instancePath = requestData.instancePath
+
+	if not instancePath then
+		return { error = "Instance path is required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local attributes = instance:GetAttributes()
+		local serializedAttributes = {}
+
+		for name, value in pairs(attributes) do
+			local valueType = typeof(value)
+			local serializedValue = value
+
+			if valueType == "Vector3" then
+				serializedValue = { X = value.X, Y = value.Y, Z = value.Z, _type = "Vector3" }
+			elseif valueType == "Color3" then
+				serializedValue = { R = value.R, G = value.G, B = value.B, _type = "Color3" }
+			elseif valueType == "CFrame" then
+				serializedValue = { Position = { X = value.Position.X, Y = value.Position.Y, Z = value.Position.Z }, _type = "CFrame" }
+			elseif valueType == "UDim2" then
+				serializedValue = { X = { Scale = value.X.Scale, Offset = value.X.Offset }, Y = { Scale = value.Y.Scale, Offset = value.Y.Offset }, _type = "UDim2" }
+			elseif valueType == "BrickColor" then
+				serializedValue = { Name = value.Name, _type = "BrickColor" }
+			end
+
+			serializedAttributes[name] = {
+				value = serializedValue,
+				type = valueType
+			}
+		end
+
+		local count = 0
+		for _ in pairs(serializedAttributes) do count = count + 1 end
+
+		return {
+			instancePath = instancePath,
+			attributes = serializedAttributes,
+			count = count
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to get attributes: " .. tostring(result) }
+	end
+end
+
+-- Attribute Tools: Delete an attribute
+handlers.deleteAttribute = function(requestData)
+	local instancePath = requestData.instancePath
+	local attributeName = requestData.attributeName
+
+	if not instancePath or not attributeName then
+		return { error = "Instance path and attribute name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local existed = instance:GetAttribute(attributeName) ~= nil
+		instance:SetAttribute(attributeName, nil)
+		ChangeHistoryService:SetWaypoint("Delete attribute " .. attributeName .. " from " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			attributeName = attributeName,
+			existed = existed,
+			message = existed and "Attribute deleted successfully" or "Attribute did not exist"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to delete attribute: " .. tostring(result) }
+	end
+end
+
+-- Tag Tools: Get all tags on an instance
+handlers.getTags = function(requestData)
+	local instancePath = requestData.instancePath
+
+	if not instancePath then
+		return { error = "Instance path is required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local tags = CollectionService:GetTags(instance)
+
+		return {
+			instancePath = instancePath,
+			tags = tags,
+			count = #tags
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to get tags: " .. tostring(result) }
+	end
+end
+
+-- Tag Tools: Add a tag to an instance
+handlers.addTag = function(requestData)
+	local instancePath = requestData.instancePath
+	local tagName = requestData.tagName
+
+	if not instancePath or not tagName then
+		return { error = "Instance path and tag name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local alreadyHad = CollectionService:HasTag(instance, tagName)
+		CollectionService:AddTag(instance, tagName)
+		ChangeHistoryService:SetWaypoint("Add tag " .. tagName .. " to " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			tagName = tagName,
+			alreadyHad = alreadyHad,
+			message = alreadyHad and "Instance already had this tag" or "Tag added successfully"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to add tag: " .. tostring(result) }
+	end
+end
+
+-- Tag Tools: Remove a tag from an instance
+handlers.removeTag = function(requestData)
+	local instancePath = requestData.instancePath
+	local tagName = requestData.tagName
+
+	if not instancePath or not tagName then
+		return { error = "Instance path and tag name are required" }
+	end
+
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return { error = "Instance not found: " .. instancePath }
+	end
+
+	local success, result = pcall(function()
+		local hadTag = CollectionService:HasTag(instance, tagName)
+		CollectionService:RemoveTag(instance, tagName)
+		ChangeHistoryService:SetWaypoint("Remove tag " .. tagName .. " from " .. instance.Name)
+
+		return {
+			success = true,
+			instancePath = instancePath,
+			tagName = tagName,
+			hadTag = hadTag,
+			message = hadTag and "Tag removed successfully" or "Instance did not have this tag"
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to remove tag: " .. tostring(result) }
+	end
+end
+
+-- Tag Tools: Get all instances with a specific tag
+handlers.getTagged = function(requestData)
+	local tagName = requestData.tagName
+
+	if not tagName then
+		return { error = "Tag name is required" }
+	end
+
+	local success, result = pcall(function()
+		local taggedInstances = CollectionService:GetTagged(tagName)
+		local instances = {}
+
+		for _, instance in ipairs(taggedInstances) do
+			table.insert(instances, {
+				name = instance.Name,
+				className = instance.ClassName,
+				path = getInstancePath(instance)
+			})
+		end
+
+		return {
+			tagName = tagName,
+			instances = instances,
+			count = #instances
+		}
+	end)
+
+	if success then
+		return result
+	else
+		return { error = "Failed to get tagged instances: " .. tostring(result) }
+	end
+end
+
+-- Asset Tools: Insert an asset from Creator Store
+handlers.insertAsset = function(requestData)
+	local assetId = requestData.assetId
+	local parentPath = requestData.parentPath or "game.Workspace"
+	local position = requestData.position
+
+	if not assetId then
+		return { error = "Asset ID is required" }
+	end
+
+	local parentInstance = getInstanceByPath(parentPath)
+	if not parentInstance then
+		return { error = "Parent instance not found: " .. parentPath }
+	end
+
+	-- Use AssetService:LoadAssetAsync (modern API that supports third-party assets)
+	local AssetService = game:GetService("AssetService")
+	local Selection = game:GetService("Selection")
+	
+	local loadSuccess, assetModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	
+	if not loadSuccess then
+		-- Return the actual Roblox error for debugging
+		return { 
+			error = "Failed to load asset",
+			robloxError = tostring(assetModel),
+			assetId = assetId,
+			hint = "Enable 'Allow Loading Third Party Assets' in Game Settings -> Security. The asset must also be public/free."
+		}
+	end
+	
+	if not assetModel then
+		return { 
+			error = "AssetService returned nil",
+			assetId = assetId,
+			hint = "The asset may not exist or is not accessible."
+		}
+	end
+
+	local success, result = pcall(function()
+		-- Get the actual content (child of the wrapper model)
+		local children = assetModel:GetChildren()
+		local insertedInstances = {}
+		
+		for _, child in ipairs(children) do
+			-- Set position if provided and it's a BasePart or Model with PrimaryPart
+			if position then
+				if child:IsA("BasePart") then
+					child.Position = Vector3.new(position.x or 0, position.y or 0, position.z or 0)
+				elseif child:IsA("Model") then
+					if child.PrimaryPart then
+						child:SetPrimaryPartCFrame(
+							CFrame.new(position.x or 0, position.y or 0, position.z or 0)
+						)
+					elseif child:FindFirstChildWhichIsA("BasePart") then
+						-- Move to approximate position
+						local firstPart = child:FindFirstChildWhichIsA("BasePart")
+						local offset = child:GetBoundingBox().Position - firstPart.Position
+						child:PivotTo(CFrame.new(position.x or 0, position.y or 0, position.z or 0))
+					end
+				end
+			end
+			
+			child.Parent = parentInstance
+			table.insert(insertedInstances, {
+				name = child.Name,
+				className = child.ClassName,
+				path = getInstancePath(child)
+			})
+		end
+		
+		-- Clean up the wrapper model
+		assetModel:Destroy()
+		
+		-- Set undo waypoint
+		ChangeHistoryService:SetWaypoint("Insert Asset " .. tostring(assetId))
+		
+		-- Select the inserted objects
+		local instancesToSelect = {}
+		for _, child in ipairs(parentInstance:GetChildren()) do
+			for _, inserted in ipairs(insertedInstances) do
+				if child.Name == inserted.name and child.ClassName == inserted.className then
+					table.insert(instancesToSelect, child)
+					break
+				end
+			end
+		end
+		
+		if #instancesToSelect > 0 then
+			Selection:Set(instancesToSelect)
+		end
+		
+		return {
+			success = true,
+			assetId = assetId,
+			parentPath = parentPath,
+			insertedInstances = insertedInstances,
+			message = "Asset inserted successfully. Scripts are sandboxed and won't auto-run."
+		}
+	end)
+
+	if success then
+		if result.error then
+			return result
+		end
+		return result
+	else
+		return { 
+			error = "Failed to process asset after loading",
+			robloxError = tostring(result),
+			assetId = assetId
+		}
+	end
+end
+
+-- Asset Tools: Preview an asset without inserting (inspect hierarchy, properties, attributes)
+handlers.previewAsset = function(requestData)
+	local assetId = requestData.assetId
+	local includeProperties = requestData.includeProperties or true
+	local maxDepth = requestData.maxDepth or 10
+
+	if not assetId then
+		return { error = "Asset ID is required" }
+	end
+
+	-- Use AssetService:LoadAssetAsync (modern API that supports third-party assets)
+	local AssetService = game:GetService("AssetService")
+	
+	local loadSuccess, assetModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	
+	if not loadSuccess then
+		return { 
+			error = "Failed to load asset for preview",
+			robloxError = tostring(assetModel),
+			assetId = assetId,
+			hint = "Enable 'Allow Loading Third Party Assets' in Game Settings -> Security."
+		}
+	end
+	
+	if not assetModel then
+		return { 
+			error = "AssetService returned nil",
+			assetId = assetId
+		}
+	end
+
+	-- Recursive function to build hierarchy with properties
+	local function buildHierarchy(instance, depth)
+		if depth > maxDepth then 
+			return { name = instance.Name, className = instance.ClassName, truncated = true }
+		end
+		
+		local node = {
+			name = instance.Name,
+			className = instance.ClassName,
+			children = {}
+		}
+		
+		if includeProperties then
+			node.properties = {}
+			
+			-- Get all attributes
+			local attrSuccess, attrs = pcall(function()
+				return instance:GetAttributes()
+			end)
+			if attrSuccess and next(attrs) then
+				node.attributes = attrs
+			end
+			
+			-- Extract common properties based on class type
+			if instance:IsA("BasePart") then
+				pcall(function() 
+					node.properties.Size = { X = instance.Size.X, Y = instance.Size.Y, Z = instance.Size.Z }
+				end)
+				pcall(function() 
+					node.properties.Position = { X = instance.Position.X, Y = instance.Position.Y, Z = instance.Position.Z }
+				end)
+				pcall(function() node.properties.Material = tostring(instance.Material) end)
+				pcall(function() node.properties.BrickColor = instance.BrickColor.Name end)
+				pcall(function() node.properties.Color = { R = instance.Color.R, G = instance.Color.G, B = instance.Color.B } end)
+				pcall(function() node.properties.Transparency = instance.Transparency end)
+				pcall(function() node.properties.Anchored = instance.Anchored end)
+				pcall(function() node.properties.CanCollide = instance.CanCollide end)
+			end
+			
+			if instance:IsA("MeshPart") then
+				pcall(function() node.properties.MeshId = instance.MeshId end)
+				pcall(function() node.properties.TextureID = instance.TextureID end)
+			end
+			
+			if instance:IsA("Model") then
+				pcall(function() 
+					if instance.PrimaryPart then
+						node.properties.PrimaryPart = instance.PrimaryPart.Name
+					end
+				end)
+			end
+			
+			if instance:IsA("LuaSourceContainer") then
+				pcall(function() 
+					local source = instance.Source
+					node.properties.SourceLength = #source
+					node.properties.SourcePreview = string.sub(source, 1, 200) .. (source and #source > 200 and "..." or "")
+				end)
+				if instance:IsA("BaseScript") then
+					pcall(function() node.properties.Enabled = instance.Enabled end)
+				end
+			end
+			
+			if instance:IsA("Decal") or instance:IsA("Texture") then
+				pcall(function() node.properties.Texture = instance.Texture end)
+			end
+			
+			if instance:IsA("Sound") then
+				pcall(function() node.properties.SoundId = instance.SoundId end)
+				pcall(function() node.properties.Volume = instance.Volume end)
+			end
+		end
+		
+		for _, child in ipairs(instance:GetChildren()) do
+			table.insert(node.children, buildHierarchy(child, depth + 1))
+		end
+		
+		return node
+	end
+
+	-- Build hierarchy for all children of the asset wrapper
+	local hierarchy = {}
+	local allDescendants = assetModel:GetDescendants()
+	
+	for _, child in ipairs(assetModel:GetChildren()) do
+		table.insert(hierarchy, buildHierarchy(child, 0))
+	end
+	
+	-- Collect class counts
+	local classCounts = {}
+	for _, desc in ipairs(allDescendants) do
+		classCounts[desc.ClassName] = (classCounts[desc.ClassName] or 0) + 1
+	end
+	
+	-- Check for specific content types
+	local hasScripts = false
+	local hasAnimations = false
+	local hasSounds = false
+	local hasParticles = false
+	
+	for _, desc in ipairs(allDescendants) do
+		if desc:IsA("LuaSourceContainer") then hasScripts = true end
+		if desc:IsA("Animation") or desc:IsA("AnimationTrack") then hasAnimations = true end
+		if desc:IsA("Sound") then hasSounds = true end
+		if desc:IsA("ParticleEmitter") or desc:IsA("Fire") or desc:IsA("Smoke") or desc:IsA("Sparkles") then hasParticles = true end
+	end
+	
+	-- Cleanup - don't leave asset in scene
+	assetModel:Destroy()
+	
+	return {
+		success = true,
+		assetId = assetId,
+		hierarchy = hierarchy,
+		summary = {
+			totalInstances = #allDescendants,
+			classes = classCounts,
+			hasScripts = hasScripts,
+			hasAnimations = hasAnimations,
+			hasSounds = hasSounds,
+			hasParticles = hasParticles
+		},
+		message = "Asset previewed and cleaned up. Use insert_asset to add to scene."
+	}
+end
+
 
 local function updateUIState()
 	if pluginState.isActive then
@@ -2299,12 +3250,12 @@ local function updateUIState()
 		step3Label.Text = "3. Ready for commands (connecting...)"
 		pluginState.mcpWaitStartTime = nil
 		troubleshootLabel.Visible = false
-
+		
 		if not buttonHover then
 			connectButton.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
 		end
-
-
+		
+		
 		urlInput.TextEditable = false
 		urlInput.BackgroundColor3 = Color3.fromRGB(55, 65, 81)
 		urlInput.BorderColor3 = Color3.fromRGB(75, 85, 99)
@@ -2329,12 +3280,12 @@ local function updateUIState()
 		step3Label.Text = "3. Ready for commands (offline)"
 		pluginState.mcpWaitStartTime = nil
 		troubleshootLabel.Visible = false
-
+		
 		if not buttonHover then
 			connectButton.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
 		end
-
-
+		
+		
 		urlInput.TextEditable = true
 		urlInput.BackgroundColor3 = Color3.fromRGB(55, 65, 81)
 		urlInput.BorderColor3 = Color3.fromRGB(99, 102, 241)
@@ -2398,7 +3349,7 @@ local function deactivatePlugin()
 		pluginState.connection:Disconnect()
 		pluginState.connection = nil
 	end
-
+	
 	pluginState.consecutiveFailures = 0
 	pluginState.currentRetryDelay = 0.5
 end
@@ -2421,14 +3372,6 @@ end)
 
 updateUIState()
 ]]></ProtectedString>
-			<bool name="Disabled">false</bool>
-			<Content name="LinkedSource"><null></null></Content>
-			<token name="RunContext">0</token>
-			<string name="ScriptGuid">{28143548-7665-45FD-AF98-E85086ACA06A}</string>
-			<BinaryString name="AttributesSerialize"></BinaryString>
-			<SecurityCapabilities name="Capabilities">0</SecurityCapabilities>
-			<bool name="DefinesCapabilities">false</bool>
-			<string name="Name">Script</string>
 			<int64 name="SourceAssetId">-1</int64>
 			<BinaryString name="Tags"></BinaryString>
 		</Properties>
