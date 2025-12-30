@@ -31,7 +31,7 @@ local screenGui = plugin:CreateDockWidgetPluginGui(
 	"MCPServerInterface",
 	DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 400, 500, 350, 450)
 )
-screenGui.Title = "MCP Server v1.7.0"
+screenGui.Title = "MCP Server v2.0.0"
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -641,6 +641,8 @@ processRequest = function(request)
 		return handlers.insertAsset(data)
 	elseif endpoint == "/api/preview-asset" then
 		return handlers.previewAsset(data)
+	elseif endpoint == "/api/get-selection" then
+		return handlers.getSelection(data)
 	else
 		return { error = "Unknown endpoint: " .. tostring(endpoint) }
 	end
@@ -3194,6 +3196,38 @@ handlers.previewAsset = function(requestData)
 	}
 end
 
+
+
+-- Selection handler
+handlers.getSelection = function(requestData)
+	local selection = Selection:Get()
+
+	if #selection == 0 then
+		return {
+			success = true,
+			selection = {},
+			count = 0,
+			message = "No objects selected"
+		}
+	end
+
+	local selectedObjects = {}
+	for _, instance in ipairs(selection) do
+		table.insert(selectedObjects, {
+			name = instance.Name,
+			className = instance.ClassName,
+			path = getInstancePath(instance),
+			parent = instance.Parent and getInstancePath(instance.Parent) or nil
+		})
+	end
+
+	return {
+		success = true,
+		selection = selectedObjects,
+		count = #selection,
+		message = #selection .. " object(s) selected"
+	}
+end
 
 -- ============================================
 -- CONSOLIDATED HANDLERS

@@ -411,6 +411,18 @@ class RobloxStudioMCPServer {
           },
 
           // ============================================
+          // SELECTION (1 tool)
+          // ============================================
+          {
+            name: 'get_selection',
+            description: 'Get all currently selected objects in Studio for context-aware assistance.',
+            inputSchema: {
+              type: 'object',
+              properties: {}
+            }
+          },
+
+          // ============================================
           // ASSET TOOLS (5 tools - conditionally added)
           // ============================================
           {
@@ -532,6 +544,10 @@ class RobloxStudioMCPServer {
               (args as any)?.action,
               { instancePath: (args as any)?.instancePath, tagName: (args as any)?.tagName }
             );
+
+          // Selection
+          case 'get_selection':
+            return await this.tools.getSelection();
 
           // Assets
           case 'insert_asset':

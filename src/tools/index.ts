@@ -327,4 +327,16 @@ export class RobloxStudioTools {
     });
     return this.formatResponse(response);
   }
+
+  async getSelection() {
+    const response = await this.client.request('/api/get-selection', {});
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response, null, 2)
+        }
+      ]
+    };
+  }
 }

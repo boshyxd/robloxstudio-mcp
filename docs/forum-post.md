@@ -28,7 +28,7 @@
 
 ## What is This?
 
-An MCP server that connects AI assistants (like Claude) to Roblox Studio through a local bridge and plugin. It lets AI explore your game’s structure, read and edit scripts (including ModuleScripts), and perform safe, bulk changes—all locally.
+An MCP server that connects AI assistants (like Claude) to Roblox Studio through a local bridge and plugin. It lets AI explore your game’s structure, read and edit scripts (including ModuleScripts), and perform safe, bulk changes, all locally.
 
 ---
 
@@ -66,27 +66,29 @@ The plugin shows "Connected" when ready.
 
 ```text
 Project understanding:  "What's the structure of this game?"
-Debugging:            "Find possible memory leaks or deprecated APIs"
-Mass operations:      "Create 50 test NPCs and position them in a grid"
-Script work:          "Explain this weapon system" / "Optimize this movement code"
+Debugging:             "Find possible memory leaks or deprecated APIs"
+Mass operations:       "Create 50 test NPCs and position them in a grid"
+Script work:           "Explain this weapon system" / "Optimize this movement code"
+Attributes & Tags:     "Tag all enemies for CollectionService" / "Set custom attributes"
 ```
 
 ## Why Use This?
 
 - Understand and navigate large projects quickly
 - Apply consistent changes at scale (properties, duplication, creation)
-- Read and edit script sources programmatically—safely via Studio
+- Read and edit script sources programmatically and safely via Studio
 
 ## Key Features
 
 - Project analysis and search across services, objects, and scripts
-- Script management (read/write) for Script, LocalScript, and ModuleScript
+- Script management (read/write/partial edit) for Script, LocalScript, and ModuleScript
+- Attributes and Tags (CollectionService) support
 - Mass operations (property edits, smart/mass duplication, calculated/relative properties)
 
 <details>
 <summary><strong>Complete Tool List (23 tools)</strong></summary>
 
-**Analysis & Search:** `get_project_structure`, `search_objects`, `search_files`, `search_by_property`
+**Analysis & Search:** `get_project_structure`, `get_selection`, `search_objects`, `search_files`, `search_by_property`
 
 **Properties:** `get_instance_properties`, `set_property`, `mass_set_property`, `mass_get_property`
 
@@ -113,16 +115,29 @@ Script work:          "Explain this weapon system" / "Optimize this movement cod
 ## Latest Updates
 
 ### v2.0.0
-- Asset tools - Search, preview, and insert Creator Store assets
-- 40 total tools for complete Studio control
-- Vision LLM support - Thumbnails visible to AI
-- Enhanced script editing with line-level operations
+- **Asset Tools** - Search, preview, and insert Creator Store assets directly from AI
+- **Vision LLM Support** - Thumbnails visible to AI for asset selection
+- **Consolidated Tools** - Streamlined from 40 to 23 focused, powerful tools
+- **Enhanced Script Editing** - Line-level operations for precise changes
+
+### v1.8.0
+- **New Tool: `get_selection`** - Get currently selected objects in Studio for context-aware AI assistance
+- **Fixed Property Setting:** `mass_create_objects_with_properties` and `set_property` now correctly handle Vector3, Color3, Enums, and instance references (like PrimaryPart)
+- **Fixed Newline Corruption:** Script source with escaped characters now properly converts when pushing code to Studio
+- **Improved Tool Descriptions:** Clearer documentation distinguishing Roblox instances from local files
+
+### v1.7.x
+- **Partial Script Editing:** `edit_script_lines`, `insert_script_lines`, `delete_script_lines` for targeted edits without rewriting entire scripts
+- **Attributes Support:** `get_attribute`, `set_attribute`, `get_attributes`, `delete_attribute` with Vector3, Color3, UDim2, BrickColor support
+- **Tags (CollectionService):** `get_tags`, `add_tag`, `remove_tag`, `get_tagged` for tag-based workflows
+- **Improved Script Handling:** `get_script_source` now returns `numberedSource` field with line numbers for accurate editing
+- Uses ScriptEditorService:UpdateSourceAsync for editing scripts open in tabs
 
 ---
 
 ## Get Started
 
-1. **[Install Studio Plugin](https://create.roblox.com/store/asset/75577477776988)**
+1. **[Install Studio Plugin](https://github.com/boshyxd/robloxstudio-mcp/releases)**
 2. **Enable HTTP Requests** (Game Settings → Security)  
 3. **Connect AI:** `claude mcp add robloxstudio -- npx -y robloxstudio-mcp`
 

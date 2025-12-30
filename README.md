@@ -2,6 +2,8 @@
 
 MCP server for AI-powered Roblox Studio integration. 23 consolidated tools for exploring projects, analyzing scripts, managing assets, and building games autonomously.
 
+https://devforum.roblox.com/t/v180-roblox-studio-mcp-speed-up-your-workflow-by-letting-ai-read-paths-and-properties/3707071
+
 <a href="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@boshyxd/robloxstudio-mcp/badge" alt="Roblox Studio Server MCP server" />
 </a>
@@ -26,6 +28,11 @@ claude mcp add robloxstudio -- npx -y robloxstudio-mcp
 }
 ```
 
+**Install NPM Package**
+```bash
+npm i robloxstudio-mcp
+```
+
 <details>
 <summary>Note for native Windows users</summary>
 If you encounter issues, you may need to run it through `cmd`. Update your configuration like this:
@@ -46,16 +53,8 @@ If you encounter issues, you may need to run it through `cmd`. Update your confi
 
 The MCP server requires a companion Roblox Studio plugin:
 
-1. **Roblox Creator Store**:
-   - Install from: https://create.roblox.com/store/asset/75577477776988
-   - Click "Install" - Opens in Studio automatically
-
-2. **Manual download**:
    - Download [MCPPlugin.rbxmx](https://github.com/boshyxd/robloxstudio-mcp/releases/latest/download/MCPPlugin.rbxmx)
    - Save to your `%LOCALAPPDATA%/Roblox/Plugins` folder
-
-3. **Advanced setup**:
-   - See [studio-plugin/INSTALLATION.md](studio-plugin/INSTALLATION.md) for other methods
 
 **After installation:**
 - Enable "Allow HTTP Requests" in Game Settings > Security
