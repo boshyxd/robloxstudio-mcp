@@ -595,8 +595,8 @@ class RobloxStudioMCPServer {
                 },
                 component: {
                   type: 'string',
-                  enum: ['X', 'Y', 'Z'],
-                  description: 'Specific component for Vector3/UDim2 properties'
+                  enum: ['X', 'Y', 'Z', 'XScale', 'XOffset', 'YScale', 'YOffset'],
+                  description: 'For Vector3: X, Y, Z. For UDim2: XScale, XOffset, YScale, YOffset (value must be a number)'
                 }
               },
               required: ['paths', 'propertyName', 'operation', 'value']

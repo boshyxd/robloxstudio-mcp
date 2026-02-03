@@ -389,7 +389,7 @@ export class RobloxStudioTools {
     propertyName: string, 
     operation: 'add' | 'multiply' | 'divide' | 'subtract' | 'power',
     value: any,
-    component?: 'X' | 'Y' | 'Z' // For Vector3/UDim2 properties
+    component?: 'X' | 'Y' | 'Z' | 'XScale' | 'XOffset' | 'YScale' | 'YOffset' // Vector3: X,Y,Z; UDim2: XScale, XOffset, YScale, YOffset
   ) {
     if (!paths || paths.length === 0 || !propertyName || !operation || value === undefined) {
       throw new Error('Paths, property name, operation, and value are required for set_relative_property');

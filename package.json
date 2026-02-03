@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "build:plugin": "cd studio-plugin && rojo build default.project.json --output MCPPlugin.rbxmx",
+    "build:plugin": "node scripts/build-plugin.mjs",
     "build:all": "npm run build && npm run build:plugin",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",

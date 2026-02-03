@@ -551,6 +551,28 @@ local function convertPropertyValue(instance, propertyName, propertyValue)
 		return Color3.new(propertyValue.R or 0, propertyValue.G or 0, propertyValue.B or 0)
 	end
 
+	-- Handle UDim2: { X = { Scale, Offset }, Y = { Scale, Offset } } or array [scaleX, offsetX, scaleY, offsetY]
+	if type(propertyValue) == "table" then
+		if type(propertyValue.X) == "table" and type(propertyValue.Y) == "table" then
+			local xScale = (propertyValue.X.Scale ~= nil) and propertyValue.X.Scale or 0
+			local xOffset = (propertyValue.X.Offset ~= nil) and propertyValue.X.Offset or 0
+			local yScale = (propertyValue.Y.Scale ~= nil) and propertyValue.Y.Scale or 0
+			local yOffset = (propertyValue.Y.Offset ~= nil) and propertyValue.Y.Offset or 0
+			return UDim2.new(xScale, xOffset, yScale, yOffset)
+		end
+		if #propertyValue == 4 then
+			local success, currentVal = pcall(function() return instance[propertyName] end)
+			if success and typeof(currentVal) == "UDim2" then
+				return UDim2.new(
+					propertyValue[1] or 0,
+					propertyValue[2] or 0,
+					propertyValue[3] or 0,
+					propertyValue[4] or 0
+				)
+			end
+		end
+	end
+
 	-- Handle Enum values (strings like "Ball", "Cylinder", etc.)
 	if type(propertyValue) == "string" then
 		local success, currentVal = pcall(function() return instance[propertyName] end)
@@ -1102,7 +1124,11 @@ handlers.getInstanceProperties = function(requestData)
 
 		for _, prop in ipairs(commonProps) do
 			local propSuccess, propValue = pcall(function()
-				return tostring(instance[prop])
+				local val = instance[prop]
+				if typeof(val) == "UDim2" then
+					return { X = { Scale = val.X.Scale, Offset = val.X.Offset }, Y = { Scale = val.Y.Scale, Offset = val.Y.Offset }, _type = "UDim2" }
+				end
+				return tostring(val)
 			end)
 			if propSuccess then
 				properties[prop] = propValue
@@ -2272,6 +2298,39 @@ handlers.setRelativeProperty = function(requestData)
 					elseif operation == "power" then
 						newValue = Vector3.new(x ^ value, y ^ value, z ^ value)
 					end
+				elseif typeof(currentValue) == "UDim2" and type(value) == "number" and component then
+					local xs, xo = currentValue.X.Scale, currentValue.X.Offset
+					local ys, yo = currentValue.Y.Scale, currentValue.Y.Offset
+					if component == "XScale" then
+						if operation == "add" then xs = xs + value
+						elseif operation == "subtract" then xs = xs - value
+						elseif operation == "multiply" then xs = xs * value
+						elseif operation == "divide" then xs = xs / value
+						elseif operation == "power" then xs = xs ^ value
+						end
+					elseif component == "XOffset" then
+						if operation == "add" then xo = xo + value
+						elseif operation == "subtract" then xo = xo - value
+						elseif operation == "multiply" then xo = xo * value
+						elseif operation == "divide" then xo = xo / value
+						elseif operation == "power" then xo = xo ^ value
+						end
+					elseif component == "YScale" then
+						if operation == "add" then ys = ys + value
+						elseif operation == "subtract" then ys = ys - value
+						elseif operation == "multiply" then ys = ys * value
+						elseif operation == "divide" then ys = ys / value
+						elseif operation == "power" then ys = ys ^ value
+						end
+					elseif component == "YOffset" then
+						if operation == "add" then yo = yo + value
+						elseif operation == "subtract" then yo = yo - value
+						elseif operation == "multiply" then yo = yo * value
+						elseif operation == "divide" then yo = yo / value
+						elseif operation == "power" then yo = yo ^ value
+						end
+					end
+					newValue = UDim2.new(xs, xo, ys, yo)
 				else
 					error("Unsupported property type or operation")
 				end
