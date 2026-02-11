@@ -863,6 +863,23 @@ class RobloxStudioMCPServer {
               type: 'object',
               properties: {}
             }
+          },
+          // Undo/Redo Tools
+          {
+            name: 'undo',
+            description: 'Undo the last change made in Roblox Studio. Uses ChangeHistoryService to revert the most recent recording.',
+            inputSchema: {
+              type: 'object',
+              properties: {}
+            }
+          },
+          {
+            name: 'redo',
+            description: 'Redo the last undone change in Roblox Studio. Uses ChangeHistoryService to reapply the most recently undone recording.',
+            inputSchema: {
+              type: 'object',
+              properties: {}
+            }
           }
         ]
       };
@@ -974,6 +991,12 @@ class RobloxStudioMCPServer {
           // Selection Tools
           case 'get_selection':
             return await this.tools.getSelection();
+
+          // Undo/Redo Tools
+          case 'undo':
+            return await this.tools.undo();
+          case 'redo':
+            return await this.tools.redo();
 
           default:
             throw new McpError(

@@ -847,6 +847,11 @@ processRequest = function(request)
 	-- Selection endpoints
 	elseif endpoint == "/api/get-selection" then
 		return handlers.getSelection(data)
+	-- Undo/Redo endpoints
+	elseif endpoint == "/api/undo" then
+		return handlers.undo(data)
+	elseif endpoint == "/api/redo" then
+		return handlers.redo(data)
 	else
 		return { error = "Unknown endpoint: " .. tostring(endpoint) }
 	end
@@ -1540,6 +1545,8 @@ handlers.setProperty = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Set " .. propertyName .. " property")
+
 	local success, result = pcall(function()
 		-- Handle instance reference properties (Parent, PrimaryPart, etc.)
 		if propertyName == "Parent" or propertyName == "PrimaryPart" then
@@ -1565,11 +1572,13 @@ handlers.setProperty = function(requestData)
 			end
 		end
 
-		ChangeHistoryService:SetWaypoint("Set " .. propertyName .. " property")
 		return true
 	end)
 
 	if success and result ~= false then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1578,7 +1587,10 @@ handlers.setProperty = function(requestData)
 			message = "Property set successfully",
 		}
 	else
-		return { 
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
+		return {
 			error = "Failed to set property: " .. tostring(result),
 			instancePath = instancePath,
 			propertyName = propertyName,
@@ -1601,9 +1613,11 @@ handlers.createObject = function(requestData)
 		return { error = "Parent instance not found: " .. parentPath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Create " .. className)
+
 	local success, newInstance = pcall(function()
 		local instance = Instance.new(className)
-		
+
 		if name then
 			instance.Name = name
 		end
@@ -1615,11 +1629,13 @@ handlers.createObject = function(requestData)
 		end
 
 		instance.Parent = parentInstance
-		ChangeHistoryService:SetWaypoint("Create " .. className)
 		return instance
 	end)
 
 	if success and newInstance then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return {
 			success = true,
 			className = className,
@@ -1629,7 +1645,10 @@ handlers.createObject = function(requestData)
 			message = "Object created successfully",
 		}
 	else
-		return { 
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
+		return {
 			error = "Failed to create object: " .. tostring(newInstance),
 			className = className,
 			parent = parentPath,
@@ -1653,22 +1672,29 @@ handlers.deleteObject = function(requestData)
 		return { error = "Cannot delete the game instance" }
 	end
 
+	local name = instance.Name
+	local className = instance.ClassName
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Delete " .. className .. " (" .. name .. ")")
+
 	local success, result = pcall(function()
-		local name = instance.Name
-		local className = instance.ClassName
 		instance:Destroy()
-		ChangeHistoryService:SetWaypoint("Delete " .. className .. " (" .. name .. ")")
 		return true
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return {
 			success = true,
 			instancePath = instancePath,
 			message = "Object deleted successfully",
 		}
 	else
-		return { 
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
+		return {
 			error = "Failed to delete object: " .. tostring(result),
 			instancePath = instancePath,
 		}
@@ -1688,13 +1714,15 @@ handlers.massSetProperty = function(requestData)
 	local successCount = 0
 	local failureCount = 0
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Mass set " .. propertyName .. " property")
+
 	for _, path in ipairs(paths) do
 		local instance = getInstanceByPath(path)
 		if instance then
 			local success, err = pcall(function()
 				instance[propertyName] = propertyValue
 			end)
-			
+
 			if success then
 				successCount = successCount + 1
 				table.insert(results, {
@@ -1721,8 +1749,12 @@ handlers.massSetProperty = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Mass set " .. propertyName .. " property")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -1788,6 +1820,8 @@ handlers.massCreateObjects = function(requestData)
 		return { error = "Objects array is required" }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Mass create objects")
+
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
@@ -1845,8 +1879,12 @@ handlers.massCreateObjects = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Mass create objects")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -1865,6 +1903,8 @@ handlers.massCreateObjectsWithProperties = function(requestData)
 	if not objects or type(objects) ~= "table" or #objects == 0 then
 		return { error = "Objects array is required" }
 	end
+
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Mass create objects with properties")
 
 	local results = {}
 	local successCount = 0
@@ -1937,8 +1977,12 @@ handlers.massCreateObjectsWithProperties = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Mass create objects with properties")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -1965,6 +2009,8 @@ handlers.smartDuplicate = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Smart duplicate " .. instance.Name)
+
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
@@ -1972,7 +2018,7 @@ handlers.smartDuplicate = function(requestData)
 	for i = 1, count do
 		local success, newInstance = pcall(function()
 			local clone = instance:Clone()
-			
+
 			if options.namePattern then
 				clone.Name = options.namePattern:gsub("{n}", tostring(i))
 			else
@@ -2052,8 +2098,12 @@ handlers.smartDuplicate = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Smart duplicate " .. instance.Name .. " (" .. successCount .. " copies)")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -2074,6 +2124,8 @@ handlers.massDuplicate = function(requestData)
 		return { error = "Duplications array is required" }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Mass duplicate operations")
+
 	local allResults = {}
 	local totalSuccess = 0
 	local totalFailures = 0
@@ -2081,15 +2133,19 @@ handlers.massDuplicate = function(requestData)
 	for _, duplication in ipairs(duplications) do
 		local result = handlers.smartDuplicate(duplication)
 		table.insert(allResults, result)
-		
+
 		if result.summary then
 			totalSuccess = totalSuccess + result.summary.succeeded
 			totalFailures = totalFailures + result.summary.failed
 		end
 	end
 
-	if totalSuccess > 0 then
-		ChangeHistoryService:SetWaypoint("Mass duplicate operations (" .. totalSuccess .. " objects)")
+	if recordingId then
+		if totalSuccess > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -2188,6 +2244,8 @@ handlers.setCalculatedProperty = function(requestData)
 		return { error = "Paths, property name, and formula are required" }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Set calculated " .. propertyName .. " property")
+
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
@@ -2196,12 +2254,12 @@ handlers.setCalculatedProperty = function(requestData)
 		local instance = getInstanceByPath(path)
 		if instance then
 			local value, evalError = evaluateFormula(formula, variables, instance, index)
-			
+
 			if value ~= nil and not evalError then
 				local success, err = pcall(function()
 					instance[propertyName] = value
 				end)
-				
+
 				if success then
 					successCount = successCount + 1
 					table.insert(results, {
@@ -2237,8 +2295,12 @@ handlers.setCalculatedProperty = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Set calculated " .. propertyName .. " property")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -2263,6 +2325,8 @@ handlers.setRelativeProperty = function(requestData)
 		return { error = "Paths, property name, operation, and value are required" }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Set relative " .. propertyName .. " property")
+
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
@@ -2277,7 +2341,7 @@ handlers.setRelativeProperty = function(requestData)
 				if component and typeof(currentValue) == "Vector3" then
 					local x, y, z = currentValue.X, currentValue.Y, currentValue.Z
 					local targetValue = value
-					
+
 					if component == "X" then
 						if operation == "add" then x = x + targetValue
 						elseif operation == "subtract" then x = x - targetValue
@@ -2300,11 +2364,11 @@ handlers.setRelativeProperty = function(requestData)
 						elseif operation == "power" then z = z ^ targetValue
 						end
 					end
-					
+
 					newValue = Vector3.new(x, y, z)
 				elseif typeof(currentValue) == "Color3" and typeof(value) == "Color3" then
 					local r, g, b = currentValue.R, currentValue.G, currentValue.B
-					
+
 					if operation == "add" then
 						newValue = Color3.new(
 							math.min(1, r + value.R),
@@ -2334,7 +2398,7 @@ handlers.setRelativeProperty = function(requestData)
 					end
 				elseif typeof(currentValue) == "Vector3" and type(value) == "number" then
 					local x, y, z = currentValue.X, currentValue.Y, currentValue.Z
-					
+
 					if operation == "add" then
 						newValue = Vector3.new(x + value, y + value, z + value)
 					elseif operation == "subtract" then
@@ -2386,7 +2450,7 @@ handlers.setRelativeProperty = function(requestData)
 				instance[propertyName] = newValue
 				return newValue
 			end)
-			
+
 			if success then
 				successCount = successCount + 1
 				table.insert(results, {
@@ -2416,8 +2480,12 @@ handlers.setRelativeProperty = function(requestData)
 		end
 	end
 
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Set relative " .. propertyName .. " property")
+	if recordingId then
+		if successCount > 0 then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		else
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 	end
 
 	return {
@@ -2556,14 +2624,15 @@ handlers.setScriptSource = function(requestData)
 	sourceToSet = sourceToSet:gsub("\\t", "\t")
 	sourceToSet = sourceToSet:gsub("\\r", "\r")
 	sourceToSet = sourceToSet:gsub("\\\\", "\\")
+
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Set script source: " .. instance.Name)
+
 	local updateSuccess, updateResult = pcall(function()
 		local oldSourceLength = string.len(instance.Source)
 
 		ScriptEditorService:UpdateSourceAsync(instance, function(oldContent)
 			return sourceToSet
 		end)
-
-		ChangeHistoryService:SetWaypoint("Set script source: " .. instance.Name)
 
 		return {
 			success = true,
@@ -2576,6 +2645,9 @@ handlers.setScriptSource = function(requestData)
 	end)
 
 	if updateSuccess then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return updateResult
 	end
 
@@ -2583,8 +2655,6 @@ handlers.setScriptSource = function(requestData)
 	local directSuccess, directResult = pcall(function()
 		local oldSource = instance.Source
 		instance.Source = sourceToSet
-
-		ChangeHistoryService:SetWaypoint("Set script source: " .. instance.Name)
 
 		return {
 			success = true,
@@ -2597,6 +2667,9 @@ handlers.setScriptSource = function(requestData)
 	end)
 
 	if directSuccess then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return directResult
 	end
 
@@ -2621,8 +2694,6 @@ handlers.setScriptSource = function(requestData)
 		newScript.Parent = parent
 		instance:Destroy()
 
-		ChangeHistoryService:SetWaypoint("Replace script: " .. name)
-
 		return {
 			success = true,
 			instancePath = getInstancePath(newScript),
@@ -2632,8 +2703,14 @@ handlers.setScriptSource = function(requestData)
 	end)
 
 	if replaceSuccess then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return replaceResult
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return {
 			error = "Failed to set script source. UpdateSourceAsync failed: " .. tostring(updateResult) ..
 			        ". Direct assignment failed: " .. tostring(directResult) ..
@@ -2667,6 +2744,8 @@ handlers.editScriptLines = function(requestData)
 	if not instance:IsA("LuaSourceContainer") then
 		return { error = "Instance is not a script-like object: " .. instance.ClassName }
 	end
+
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Edit script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
 
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(instance.Source)
@@ -2707,8 +2786,6 @@ handlers.editScriptLines = function(requestData)
 			return newSource
 		end)
 
-		ChangeHistoryService:SetWaypoint("Edit script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
-
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2721,8 +2798,14 @@ handlers.editScriptLines = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to edit script lines: " .. tostring(result) }
 	end
 end
@@ -2751,6 +2834,8 @@ handlers.insertScriptLines = function(requestData)
 	if not instance:IsA("LuaSourceContainer") then
 		return { error = "Instance is not a script-like object: " .. instance.ClassName }
 	end
+
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Insert script lines after line " .. afterLine .. ": " .. instance.Name)
 
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(instance.Source)
@@ -2788,8 +2873,6 @@ handlers.insertScriptLines = function(requestData)
 			return newSource
 		end)
 
-		ChangeHistoryService:SetWaypoint("Insert script lines after line " .. afterLine .. ": " .. instance.Name)
-
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2801,8 +2884,14 @@ handlers.insertScriptLines = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to insert script lines: " .. tostring(result) }
 	end
 end
@@ -2825,6 +2914,8 @@ handlers.deleteScriptLines = function(requestData)
 	if not instance:IsA("LuaSourceContainer") then
 		return { error = "Instance is not a script-like object: " .. instance.ClassName }
 	end
+
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Delete script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
 
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(instance.Source)
@@ -2855,8 +2946,6 @@ handlers.deleteScriptLines = function(requestData)
 			return newSource
 		end)
 
-		ChangeHistoryService:SetWaypoint("Delete script lines " .. startLine .. "-" .. endLine .. ": " .. instance.Name)
-
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2868,8 +2957,14 @@ handlers.deleteScriptLines = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to delete script lines: " .. tostring(result) }
 	end
 end
@@ -2938,6 +3033,8 @@ handlers.setAttribute = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Set attribute " .. attributeName .. " on " .. instance.Name)
+
 	local success, result = pcall(function()
 		local value = attributeValue
 
@@ -2960,7 +3057,6 @@ handlers.setAttribute = function(requestData)
 		end
 
 		instance:SetAttribute(attributeName, value)
-		ChangeHistoryService:SetWaypoint("Set attribute " .. attributeName .. " on " .. instance.Name)
 
 		return {
 			success = true,
@@ -2972,8 +3068,14 @@ handlers.setAttribute = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to set attribute: " .. tostring(result) }
 	end
 end
@@ -3048,10 +3150,11 @@ handlers.deleteAttribute = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Delete attribute " .. attributeName .. " from " .. instance.Name)
+
 	local success, result = pcall(function()
 		local existed = instance:GetAttribute(attributeName) ~= nil
 		instance:SetAttribute(attributeName, nil)
-		ChangeHistoryService:SetWaypoint("Delete attribute " .. attributeName .. " from " .. instance.Name)
 
 		return {
 			success = true,
@@ -3063,8 +3166,14 @@ handlers.deleteAttribute = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to delete attribute: " .. tostring(result) }
 	end
 end
@@ -3113,10 +3222,11 @@ handlers.addTag = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Add tag " .. tagName .. " to " .. instance.Name)
+
 	local success, result = pcall(function()
 		local alreadyHad = CollectionService:HasTag(instance, tagName)
 		CollectionService:AddTag(instance, tagName)
-		ChangeHistoryService:SetWaypoint("Add tag " .. tagName .. " to " .. instance.Name)
 
 		return {
 			success = true,
@@ -3128,8 +3238,14 @@ handlers.addTag = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to add tag: " .. tostring(result) }
 	end
 end
@@ -3148,10 +3264,11 @@ handlers.removeTag = function(requestData)
 		return { error = "Instance not found: " .. instancePath }
 	end
 
+	local recordingId = ChangeHistoryService:TryBeginRecording("MCP: Remove tag " .. tagName .. " from " .. instance.Name)
+
 	local success, result = pcall(function()
 		local hadTag = CollectionService:HasTag(instance, tagName)
 		CollectionService:RemoveTag(instance, tagName)
-		ChangeHistoryService:SetWaypoint("Remove tag " .. tagName .. " from " .. instance.Name)
 
 		return {
 			success = true,
@@ -3163,8 +3280,14 @@ handlers.removeTag = function(requestData)
 	end)
 
 	if success then
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Commit)
+		end
 		return result
 	else
+		if recordingId then
+			ChangeHistoryService:FinishRecording(recordingId, Enum.FinishRecordingOperation.Cancel)
+		end
 		return { error = "Failed to remove tag: " .. tostring(result) }
 	end
 end
@@ -3232,6 +3355,39 @@ handlers.getSelection = function(requestData)
 		count = #selection,
 		message = #selection .. " object(s) selected"
 	}
+end
+
+-- Undo/Redo Tools
+handlers.undo = function(requestData)
+	local success, result = pcall(function()
+		ChangeHistoryService:Undo()
+		return true
+	end)
+
+	if success then
+		return {
+			success = true,
+			message = "Undo performed successfully"
+		}
+	else
+		return { error = "Failed to undo: " .. tostring(result) }
+	end
+end
+
+handlers.redo = function(requestData)
+	local success, result = pcall(function()
+		ChangeHistoryService:Redo()
+		return true
+	end)
+
+	if success then
+		return {
+			success = true,
+			message = "Redo performed successfully"
+		}
+	else
+		return { error = "Failed to redo: " .. tostring(result) }
+	end
 end
 
 local function updateUIState()
