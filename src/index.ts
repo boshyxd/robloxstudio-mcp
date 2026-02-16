@@ -9,6 +9,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createRequire } from 'module';
+import http from 'node:http';
 import { createHttpServer } from './http-server.js';
 import { RobloxStudioTools } from './tools/index.js';
 import { BridgeService } from './bridge-service.js';
@@ -1024,23 +1025,19 @@ class RobloxStudioMCPServer {
     const basePort = process.env.ROBLOX_STUDIO_PORT ? parseInt(process.env.ROBLOX_STUDIO_PORT) : 58741;
     const maxPort = basePort + 4;
     const host = process.env.ROBLOX_STUDIO_HOST || '0.0.0.0';
-    const httpServer = createHttpServer(this.tools, this.bridge);
+    const httpApp = createHttpServer(this.tools, this.bridge);
 
     let boundPort = 0;
     for (let port = basePort; port <= maxPort; port++) {
       try {
         await new Promise<void>((resolve, reject) => {
+          const server = http.createServer(httpApp);
           const onError = (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-              httpServer.removeListener('error', onError);
-              reject(err);
-            } else {
-              reject(err);
-            }
+            reject(err);
           };
-          httpServer.once('error', onError);
-          httpServer.listen(port, host, () => {
-            httpServer.removeListener('error', onError);
+          server.once('error', onError);
+          server.listen(port, host, () => {
+            server.removeListener('error', onError);
             boundPort = port;
             console.error(`HTTP server listening on ${host}:${port} for Studio plugin`);
             resolve();
@@ -1060,23 +1057,19 @@ class RobloxStudioMCPServer {
     }
 
     const LEGACY_PORT = 3002;
-    let legacyServer: ReturnType<typeof createHttpServer> | undefined;
+    let legacyApp: ReturnType<typeof createHttpServer> | undefined;
     if (boundPort !== LEGACY_PORT) {
       const legacy = createHttpServer(this.tools, this.bridge);
-      legacyServer = legacy;
+      legacyApp = legacy;
       try {
         await new Promise<void>((resolve, reject) => {
+          const server = http.createServer(legacy);
           const onError = (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-              legacy.removeListener('error', onError);
-              reject(err);
-            } else {
-              reject(err);
-            }
+            reject(err);
           };
-          legacy.once('error', onError);
-          legacy.listen(LEGACY_PORT, host, () => {
-            legacy.removeListener('error', onError);
+          server.once('error', onError);
+          server.listen(LEGACY_PORT, host, () => {
+            server.removeListener('error', onError);
             console.error(`Legacy HTTP server also listening on ${host}:${LEGACY_PORT} for old plugins`);
             resolve();
           });
@@ -1094,16 +1087,16 @@ class RobloxStudioMCPServer {
     await this.server.connect(transport);
     console.error('Roblox Studio MCP server running on stdio');
 
-    (httpServer as any).setMCPServerActive(true);
+    (httpApp as any).setMCPServerActive(true);
     console.error('MCP server marked as active');
 
     console.error('Waiting for Studio plugin to connect...');
 
     setInterval(() => {
-      (httpServer as any).trackMCPActivity();
-      if (legacyServer) (legacyServer as any).trackMCPActivity();
-      const pluginConnected = (httpServer as any).isPluginConnected();
-      const mcpActive = (httpServer as any).isMCPServerActive();
+      (httpApp as any).trackMCPActivity();
+      if (legacyApp) (legacyApp as any).trackMCPActivity();
+      const pluginConnected = (httpApp as any).isPluginConnected();
+      const mcpActive = (httpApp as any).isMCPServerActive();
 
       if (pluginConnected && mcpActive) {
       } else if (pluginConnected && !mcpActive) {
