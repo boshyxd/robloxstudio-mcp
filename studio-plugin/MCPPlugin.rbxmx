@@ -29,6 +29,7 @@ plugin.Unloading:Connect(function()
 end)
 UI.updateUIState()
 Communication.checkForUpdates()
+Communication.activatePlugin(State.getActiveTabIndex())
 ]]></string>
     </Properties>
     <Item class="Folder" referent="1">
@@ -52,6 +53,8 @@ local InstanceHandlers = TS.import(script, script.Parent, "handlers", "InstanceH
 local ScriptHandlers = TS.import(script, script.Parent, "handlers", "ScriptHandlers")
 local MetadataHandlers = TS.import(script, script.Parent, "handlers", "MetadataHandlers")
 local TestHandlers = TS.import(script, script.Parent, "handlers", "TestHandlers")
+local BuildHandlers = TS.import(script, script.Parent, "handlers", "BuildHandlers")
+local AssetHandlers = TS.import(script, script.Parent, "handlers", "AssetHandlers")
 local routeMap = {
 	["/api/file-tree"] = QueryHandlers.getFileTree,
 	["/api/search-files"] = QueryHandlers.searchFiles,
@@ -63,6 +66,7 @@ local routeMap = {
 	["/api/search-by-property"] = QueryHandlers.searchByProperty,
 	["/api/class-info"] = QueryHandlers.getClassInfo,
 	["/api/project-structure"] = QueryHandlers.getProjectStructure,
+	["/api/grep-scripts"] = QueryHandlers.grepScripts,
 	["/api/set-property"] = PropertyHandlers.setProperty,
 	["/api/mass-set-property"] = PropertyHandlers.massSetProperty,
 	["/api/mass-get-property"] = PropertyHandlers.massGetProperty,
@@ -89,9 +93,17 @@ local routeMap = {
 	["/api/get-tagged"] = MetadataHandlers.getTagged,
 	["/api/get-selection"] = MetadataHandlers.getSelection,
 	["/api/execute-luau"] = MetadataHandlers.executeLuau,
+	["/api/undo"] = MetadataHandlers.undo,
+	["/api/redo"] = MetadataHandlers.redo,
 	["/api/start-playtest"] = TestHandlers.startPlaytest,
 	["/api/stop-playtest"] = TestHandlers.stopPlaytest,
 	["/api/get-playtest-output"] = TestHandlers.getPlaytestOutput,
+	["/api/export-build"] = BuildHandlers.exportBuild,
+	["/api/import-build"] = BuildHandlers.importBuild,
+	["/api/import-scene"] = BuildHandlers.importScene,
+	["/api/search-materials"] = BuildHandlers.searchMaterials,
+	["/api/insert-asset"] = AssetHandlers.insertAsset,
+	["/api/preview-asset"] = AssetHandlers.previewAsset,
 }
 local function processRequest(request)
 	local endpoint = request.endpoint
@@ -465,15 +477,853 @@ return {
         </Properties>
         <Item class="ModuleScript" referent="4">
           <Properties>
+            <string name="Name">AssetHandlers</string>
+            <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
+local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
+local Utils = TS.import(script, script.Parent.Parent, "Utils")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
+local AssetService = game:GetService("AssetService")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Selection = game:GetService("Selection")
+local _binding = Utils
+local getInstancePath = _binding.getInstancePath
+local getInstanceByPath = _binding.getInstanceByPath
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
+local function insertAsset(requestData)
+	local assetId = requestData.assetId
+	local _condition = (requestData.parentPath)
+	if _condition == nil then
+		_condition = "game.Workspace"
+	end
+	local parentPath = _condition
+	local position = requestData.position
+	if not (assetId ~= 0 and assetId == assetId and assetId) then
+		return {
+			error = "assetId is required",
+		}
+	end
+	local parentInstance = getInstanceByPath(parentPath)
+	if not parentInstance then
+		return {
+			error = `Parent instance not found: {parentPath}`,
+		}
+	end
+	local recordingId = beginRecording(`Insert asset {assetId}`)
+	local loadSuccess, wrapperModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	if not loadSuccess or not wrapperModel then
+		finishRecording(recordingId, false)
+		return {
+			error = `Failed to load asset {assetId}: {tostring(wrapperModel)}`,
+		}
+	end
+	local insertedInstances = {}
+	local children = wrapperModel:GetChildren()
+	for _, child in children do
+		child.Parent = parentInstance
+		table.insert(insertedInstances, child)
+	end
+	-- Apply position if provided
+	if position then
+		local _condition_1 = position.x
+		if _condition_1 == nil then
+			_condition_1 = 0
+		end
+		local _condition_2 = position.y
+		if _condition_2 == nil then
+			_condition_2 = 0
+		end
+		local _condition_3 = position.z
+		if _condition_3 == nil then
+			_condition_3 = 0
+		end
+		local pos = Vector3.new(_condition_1, _condition_2, _condition_3)
+		for _, inst in insertedInstances do
+			if inst:IsA("BasePart") then
+				inst.Position = pos
+			elseif inst:IsA("Model") then
+				if inst.PrimaryPart then
+					inst:PivotTo(CFrame.new(pos))
+				else
+					-- Find first BasePart descendant to pivot around
+					local firstPart = inst:FindFirstChildWhichIsA("BasePart", true)
+					if firstPart then
+						inst:PivotTo(CFrame.new(pos))
+					end
+				end
+			end
+		end
+	end
+	-- Destroy the wrapper model
+	wrapperModel:Destroy()
+	-- Set undo waypoint
+	finishRecording(recordingId, true)
+	-- Select inserted instances
+	pcall(function()
+		Selection:Set(insertedInstances)
+	end)
+	-- ▼ ReadonlyArray.map ▼
+	local _newValue = table.create(#insertedInstances)
+	local _callback = function(inst)
+		return {
+			name = inst.Name,
+			className = inst.ClassName,
+			path = getInstancePath(inst),
+		}
+	end
+	for _k, _v in insertedInstances do
+		_newValue[_k] = _callback(_v, _k - 1, insertedInstances)
+	end
+	-- ▲ ReadonlyArray.map ▲
+	local resultInstances = _newValue
+	return {
+		success = true,
+		assetId = assetId,
+		parentPath = parentPath,
+		insertedCount = #insertedInstances,
+		instances = resultInstances,
+	}
+end
+local function previewAsset(requestData)
+	local assetId = requestData.assetId
+	local _condition = (requestData.includeProperties)
+	if _condition == nil then
+		_condition = true
+	end
+	local includeProperties = _condition
+	local _condition_1 = (requestData.maxDepth)
+	if _condition_1 == nil then
+		_condition_1 = 10
+	end
+	local maxDepth = _condition_1
+	if not (assetId ~= 0 and assetId == assetId and assetId) then
+		return {
+			error = "assetId is required",
+		}
+	end
+	local loadSuccess, wrapperModel = pcall(function()
+		return AssetService:LoadAssetAsync(assetId)
+	end)
+	if not loadSuccess or not wrapperModel then
+		return {
+			error = `Failed to load asset {assetId}: {tostring(wrapperModel)}`,
+		}
+	end
+	-- Stats tracking
+	local totalInstances = 0
+	local classCounts = {}
+	local hasScripts = false
+	local hasAnimations = false
+	local hasSounds = false
+	local hasParticles = false
+	local function buildHierarchy(instance, depth)
+		totalInstances += 1
+		local className = instance.ClassName
+		local _condition_2 = classCounts[className]
+		if _condition_2 == nil then
+			_condition_2 = 0
+		end
+		classCounts[className] = _condition_2 + 1
+		if instance:IsA("LuaSourceContainer") then
+			hasScripts = true
+		end
+		if className == "Animation" or className == "AnimationController" or className == "Animator" then
+			hasAnimations = true
+		end
+		if instance:IsA("Sound") then
+			hasSounds = true
+		end
+		if className == "ParticleEmitter" or className == "Fire" or className == "Smoke" or className == "Sparkles" then
+			hasParticles = true
+		end
+		local node = {
+			name = instance.Name,
+			className = className,
+		}
+		if includeProperties then
+			local props = {}
+			if instance:IsA("BasePart") then
+				props.size = {
+					x = instance.Size.X,
+					y = instance.Size.Y,
+					z = instance.Size.Z,
+				}
+				props.position = {
+					x = instance.Position.X,
+					y = instance.Position.Y,
+					z = instance.Position.Z,
+				}
+				props.material = tostring(instance.Material)
+				props.color = `{instance.Color.R}, {instance.Color.G}, {instance.Color.B}`
+				props.transparency = instance.Transparency
+				props.anchored = instance.Anchored
+			end
+			if instance:IsA("MeshPart") then
+				local meshPart = instance
+				props.meshId = meshPart.MeshId
+				props.textureId = meshPart.TextureID
+			end
+			if instance:IsA("Model") then
+				local model = instance
+				if model.PrimaryPart then
+					props.primaryPart = model.PrimaryPart.Name
+				end
+			end
+			if instance:IsA("LuaSourceContainer") then
+				local ok, src = pcall(function()
+					return instance.Source
+				end)
+				local _value = ok and src
+				if _value ~= "" and _value then
+					local preview = string.sub(src, 1, 200)
+					props.sourcePreview = preview
+					props.sourceLength = #src
+				end
+			end
+			if className == "Decal" or className == "Texture" then
+				local ok, texId = pcall(function()
+					return instance.Texture
+				end)
+				if ok then
+					props.texture = texId
+				end
+			end
+			if instance:IsA("Sound") then
+				props.soundId = instance.SoundId
+			end
+			-- Only include props if there are any
+			local hasProps = false
+			for _element, _element_1 in pairs(props) do
+				local _ = { _element, _element_1 }
+				hasProps = true
+				break
+			end
+			if hasProps then
+				node.properties = props
+			end
+		end
+		if depth < maxDepth then
+			local childNodes = {}
+			for _, child in instance:GetChildren() do
+				local _arg0 = buildHierarchy(child, depth + 1)
+				table.insert(childNodes, _arg0)
+			end
+			if #childNodes > 0 then
+				node.children = childNodes
+			end
+		else
+			local childCount = #instance:GetChildren()
+			if childCount > 0 then
+				node.childCount = childCount
+				node.truncated = true
+			end
+		end
+		return node
+	end
+	local hierarchyRoots = {}
+	for _, child in wrapperModel:GetChildren() do
+		local _arg0 = buildHierarchy(child, 0)
+		table.insert(hierarchyRoots, _arg0)
+	end
+	-- CRITICAL: Destroy wrapper to prevent memory leak
+	wrapperModel:Destroy()
+	return {
+		success = true,
+		assetId = assetId,
+		hierarchy = hierarchyRoots,
+		summary = {
+			totalInstances = totalInstances,
+			classCounts = classCounts,
+			hasScripts = hasScripts,
+			hasAnimations = hasAnimations,
+			hasSounds = hasSounds,
+			hasParticles = hasParticles,
+		},
+	}
+end
+return {
+	insertAsset = insertAsset,
+	previewAsset = previewAsset,
+}
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="5">
+          <Properties>
+            <string name="Name">BuildHandlers</string>
+            <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
+local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
+local Utils = TS.import(script, script.Parent.Parent, "Utils")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
+local MaterialService = game:GetService("MaterialService")
+local _binding = Utils
+local getInstancePath = _binding.getInstancePath
+local getInstanceByPath = _binding.getInstanceByPath
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
+-- Material name lookup table
+local MATERIAL_NAMES = {
+	Plastic = Enum.Material.Plastic,
+	Wood = Enum.Material.Wood,
+	WoodPlanks = Enum.Material.WoodPlanks,
+	Slate = Enum.Material.Slate,
+	Concrete = Enum.Material.Concrete,
+	CorrodedMetal = Enum.Material.CorrodedMetal,
+	DiamondPlate = Enum.Material.DiamondPlate,
+	Foil = Enum.Material.Foil,
+	Grass = Enum.Material.Grass,
+	Ice = Enum.Material.Ice,
+	Marble = Enum.Material.Marble,
+	Granite = Enum.Material.Granite,
+	Brick = Enum.Material.Brick,
+	Pebble = Enum.Material.Pebble,
+	Sand = Enum.Material.Sand,
+	Fabric = Enum.Material.Fabric,
+	SmoothPlastic = Enum.Material.SmoothPlastic,
+	Metal = Enum.Material.Metal,
+	Neon = Enum.Material.Neon,
+	Glass = Enum.Material.Glass,
+	Cobblestone = Enum.Material.Cobblestone,
+}
+-- Shape class mapping
+local SHAPE_CLASSES = {
+	Block = "Part",
+	Wedge = "WedgePart",
+	Cylinder = "Part",
+	Ball = "Part",
+	CornerWedge = "CornerWedgePart",
+}
+local PALETTE_KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+local function roundTo(n, decimals)
+	local mult = 10 ^ decimals
+	return math.round(n * mult) / mult
+end
+local function exportBuild(requestData)
+	local instancePath = requestData.instancePath
+	local outputId = requestData.outputId
+	local _condition = (requestData.style)
+	if _condition == nil then
+		_condition = "misc"
+	end
+	local style = _condition
+	if not (instancePath ~= "" and instancePath) then
+		return {
+			error = "Instance path is required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	if not instance:IsA("Model") and not instance:IsA("Folder") then
+		return {
+			error = "Instance must be a Model or Folder",
+		}
+	end
+	local success, result = pcall(function()
+		local descendants = instance:GetDescendants()
+		local baseParts = {}
+		for _, desc in descendants do
+			if desc:IsA("BasePart") then
+				table.insert(baseParts, desc)
+			end
+		end
+		if #baseParts == 0 then
+			return {
+				error = "No BaseParts found in instance",
+			}
+		end
+		-- Compute bounding box center
+		local minX = math.huge
+		local minY = math.huge
+		local minZ = math.huge
+		local maxX = -math.huge
+		local maxY = -math.huge
+		local maxZ = -math.huge
+		for _, part in baseParts do
+			local pos = part.Position
+			local sz = part.Size
+			local halfX = sz.X / 2
+			local halfY = sz.Y / 2
+			local halfZ = sz.Z / 2
+			minX = math.min(minX, pos.X - halfX)
+			minY = math.min(minY, pos.Y - halfY)
+			minZ = math.min(minZ, pos.Z - halfZ)
+			maxX = math.max(maxX, pos.X + halfX)
+			maxY = math.max(maxY, pos.Y + halfY)
+			maxZ = math.max(maxZ, pos.Z + halfZ)
+		end
+		local centerX = (minX + maxX) / 2
+		local centerY = minY
+		local centerZ = (minZ + maxZ) / 2
+		local boundsX = roundTo(maxX - minX, 1)
+		local boundsY = roundTo(maxY - minY, 1)
+		local boundsZ = roundTo(maxZ - minZ, 1)
+		-- Build palette from unique (BrickColor, Material, MaterialVariant?) combos
+		local paletteMap = {}
+		local palette = {}
+		local keyIndex = 0
+		for _, part in baseParts do
+			local colorName = part.BrickColor.Name
+			local materialName = part.Material.Name
+			local variantName = part.MaterialVariant
+			local combo = if variantName ~= "" then `{colorName}|{materialName}|{variantName}` else `{colorName}|{materialName}`
+			if not (paletteMap[combo] ~= nil) then
+				local _arg0 = keyIndex + 1
+				local _arg1 = keyIndex + 1
+				local key = string.sub(PALETTE_KEYS, _arg0, _arg1)
+				keyIndex += 1
+				paletteMap[combo] = key
+				if variantName ~= "" then
+					palette[key] = { colorName, materialName, variantName }
+				else
+					palette[key] = { colorName, materialName }
+				end
+			end
+		end
+		-- Build compact part arrays
+		local parts = {}
+		for _, part in baseParts do
+			local pos = part.Position
+			local orient = part.Orientation
+			local sz = part.Size
+			local colorName = part.BrickColor.Name
+			local materialName = part.Material.Name
+			local combo = `{colorName}|{materialName}`
+			local _condition_1 = paletteMap[combo]
+			if _condition_1 == nil then
+				_condition_1 = "a"
+			end
+			local paletteKey = _condition_1
+			-- Relative position to center
+			local relX = roundTo(pos.X - centerX, 1)
+			local relY = roundTo(pos.Y - centerY, 1)
+			local relZ = roundTo(pos.Z - centerZ, 1)
+			local sizeX = roundTo(sz.X, 1)
+			local sizeY = roundTo(sz.Y, 1)
+			local sizeZ = roundTo(sz.Z, 1)
+			local rotX = roundTo(orient.X, 1)
+			local rotY = roundTo(orient.Y, 1)
+			local rotZ = roundTo(orient.Z, 1)
+			-- Determine shape
+			local shape = "Block"
+			if part:IsA("WedgePart") then
+				shape = "Wedge"
+			elseif part:IsA("CornerWedgePart") then
+				shape = "CornerWedge"
+			elseif part:IsA("Part") then
+				local p = part
+				if p.Shape == Enum.PartType.Cylinder then
+					shape = "Cylinder"
+				elseif p.Shape == Enum.PartType.Ball then
+					shape = "Ball"
+				end
+			end
+			-- Build part array with optional trailing fields
+			local hasTransparency = part.Transparency > 0
+			local hasShape = shape ~= "Block"
+			local partArr
+			if hasTransparency then
+				partArr = { relX, relY, relZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey, if hasShape then shape else "Block", roundTo(part.Transparency, 2) }
+			elseif hasShape then
+				partArr = { relX, relY, relZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey, shape }
+			else
+				partArr = { relX, relY, relZ, sizeX, sizeY, sizeZ, rotX, rotY, rotZ, paletteKey }
+			end
+			local _partArr = partArr
+			table.insert(parts, _partArr)
+		end
+		local _condition_1 = outputId
+		if _condition_1 == nil then
+			_condition_1 = `{style}/{(string.gsub(string.lower(instance.Name), " ", "_"))}`
+		end
+		local buildId = _condition_1
+		return {
+			success = true,
+			buildData = {
+				id = buildId,
+				style = style,
+				bounds = { boundsX, boundsY, boundsZ },
+				palette = palette,
+				parts = parts,
+			},
+		}
+	end)
+	if success and result then
+		return result
+	else
+		return {
+			error = `Failed to export build: {result}`,
+		}
+	end
+end
+local function importBuild(requestData)
+	local buildData = requestData.buildData
+	local targetPath = requestData.targetPath
+	local positionOffset = (requestData.position) or { 0, 0, 0 }
+	if not buildData or not (targetPath ~= "" and targetPath) then
+		return {
+			error = "buildData and targetPath are required",
+		}
+	end
+	local parentInstance = getInstanceByPath(targetPath)
+	if not parentInstance then
+		return {
+			error = `Target not found: {targetPath}`,
+		}
+	end
+	local recordingId = beginRecording("Import build")
+	local success, result = pcall(function()
+		local palette = buildData.palette
+		local parts = buildData.parts
+		local _condition = (buildData.id)
+		if _condition == nil then
+			_condition = "imported_build"
+		end
+		local buildId = _condition
+		-- Create model container
+		local model = Instance.new("Model")
+		local _condition_1 = (string.match(buildId, "[^/]+$"))
+		if _condition_1 == nil then
+			_condition_1 = buildId
+		end
+		model.Name = _condition_1
+		local partCount = 0
+		for _, partArr in parts do
+			local _exp = (partArr[1])
+			local _condition_2 = positionOffset[1]
+			if _condition_2 == nil then
+				_condition_2 = 0
+			end
+			local posX = _exp + _condition_2
+			local _exp_1 = (partArr[2])
+			local _condition_3 = positionOffset[2]
+			if _condition_3 == nil then
+				_condition_3 = 0
+			end
+			local posY = _exp_1 + _condition_3
+			local _exp_2 = (partArr[3])
+			local _condition_4 = positionOffset[3]
+			if _condition_4 == nil then
+				_condition_4 = 0
+			end
+			local posZ = _exp_2 + _condition_4
+			local sizeX = partArr[4]
+			local sizeY = partArr[5]
+			local sizeZ = partArr[6]
+			local rotX = partArr[7]
+			local rotY = partArr[8]
+			local rotZ = partArr[9]
+			local paletteKey = partArr[10]
+			local _condition_5 = (partArr[11])
+			if _condition_5 == nil then
+				_condition_5 = "Block"
+			end
+			local shape = _condition_5
+			local _condition_6 = (partArr[12])
+			if _condition_6 == nil then
+				_condition_6 = 0
+			end
+			local transparency = _condition_6
+			-- Determine class from shape
+			local _condition_7 = SHAPE_CLASSES[shape]
+			if _condition_7 == nil then
+				_condition_7 = "Part"
+			end
+			local className = _condition_7
+			local part = Instance.new(className)
+			-- Set shape for Part instances with non-Block shapes
+			if className == "Part" and shape ~= "Block" then
+				if shape == "Cylinder" then
+					part.Shape = Enum.PartType.Cylinder
+				elseif shape == "Ball" then
+					part.Shape = Enum.PartType.Ball
+				end
+			end
+			part.Size = Vector3.new(sizeX, sizeY, sizeZ)
+			part.Position = Vector3.new(posX, posY, posZ)
+			part.Orientation = Vector3.new(rotX, rotY, rotZ)
+			part.Anchored = true
+			if transparency > 0 then
+				part.Transparency = transparency
+			end
+			-- Apply palette
+			local paletteEntry = palette[paletteKey]
+			if paletteEntry then
+				local _binding_2 = paletteEntry
+				local colorName = _binding_2[1]
+				local materialName = _binding_2[2]
+				local variantName = _binding_2[3]
+				pcall(function()
+					part.BrickColor = BrickColor.new(colorName)
+				end)
+				pcall(function()
+					local mat = MATERIAL_NAMES[materialName]
+					if mat then
+						part.Material = mat
+					end
+				end)
+				-- Apply MaterialVariant if specified
+				if variantName ~= nil and variantName ~= "" then
+					pcall(function()
+						part.MaterialVariant = variantName
+					end)
+				end
+			end
+			part.Parent = model
+			partCount += 1
+		end
+		model.Parent = parentInstance
+		return {
+			success = true,
+			partCount = partCount,
+			modelPath = getInstancePath(model),
+		}
+	end)
+	if success and result then
+		finishRecording(recordingId, true)
+		return result
+	else
+		finishRecording(recordingId, false)
+		return {
+			error = `Failed to import build: {result}`,
+		}
+	end
+end
+local function importScene(requestData)
+	local expandedBuilds = requestData.expandedBuilds
+	local _condition = (requestData.targetPath)
+	if _condition == nil then
+		_condition = "game.Workspace"
+	end
+	local targetPath = _condition
+	if not expandedBuilds or not (type(expandedBuilds) == "table") or #expandedBuilds == 0 then
+		return {
+			error = "expandedBuilds array is required",
+		}
+	end
+	local parentInstance = getInstanceByPath(targetPath)
+	if not parentInstance then
+		return {
+			error = `Target not found: {targetPath}`,
+		}
+	end
+	local recordingId = beginRecording("Import scene")
+	local success, result = pcall(function()
+		local modelCount = 0
+		local totalParts = 0
+		local models = {}
+		for _, entry in expandedBuilds do
+			local buildData = entry.buildData
+			local position = (entry.position) or { 0, 0, 0 }
+			local rotation = (entry.rotation) or { 0, 0, 0 }
+			local _condition_1 = (entry.name)
+			if _condition_1 == nil then
+				_condition_1 = "SceneModel"
+			end
+			local name = _condition_1
+			local palette = buildData.palette
+			local parts = buildData.parts
+			local model = Instance.new("Model")
+			model.Name = name
+			local _condition_2 = rotation[1]
+			if _condition_2 == nil then
+				_condition_2 = 0
+			end
+			local _exp = math.rad(_condition_2)
+			local _condition_3 = rotation[2]
+			if _condition_3 == nil then
+				_condition_3 = 0
+			end
+			local _exp_1 = math.rad(_condition_3)
+			local _condition_4 = rotation[3]
+			if _condition_4 == nil then
+				_condition_4 = 0
+			end
+			local rotCF = CFrame.Angles(_exp, _exp_1, math.rad(_condition_4))
+			local _condition_5 = position[1]
+			if _condition_5 == nil then
+				_condition_5 = 0
+			end
+			local _condition_6 = position[2]
+			if _condition_6 == nil then
+				_condition_6 = 0
+			end
+			local _condition_7 = position[3]
+			if _condition_7 == nil then
+				_condition_7 = 0
+			end
+			local originCF = CFrame.new(_condition_5, _condition_6, _condition_7) * rotCF
+			local partCount = 0
+			for _1, partArr in parts do
+				local localX = partArr[1]
+				local localY = partArr[2]
+				local localZ = partArr[3]
+				local sizeX = partArr[4]
+				local sizeY = partArr[5]
+				local sizeZ = partArr[6]
+				local rotX = partArr[7]
+				local rotY = partArr[8]
+				local rotZ = partArr[9]
+				local paletteKey = partArr[10]
+				local _condition_8 = (partArr[11])
+				if _condition_8 == nil then
+					_condition_8 = "Block"
+				end
+				local shape = _condition_8
+				local _condition_9 = (partArr[12])
+				if _condition_9 == nil then
+					_condition_9 = 0
+				end
+				local transparency = _condition_9
+				local _condition_10 = SHAPE_CLASSES[shape]
+				if _condition_10 == nil then
+					_condition_10 = "Part"
+				end
+				local className = _condition_10
+				local part = Instance.new(className)
+				if className == "Part" and shape ~= "Block" then
+					if shape == "Cylinder" then
+						part.Shape = Enum.PartType.Cylinder
+					elseif shape == "Ball" then
+						part.Shape = Enum.PartType.Ball
+					end
+				end
+				part.Size = Vector3.new(sizeX, sizeY, sizeZ)
+				-- Apply local rotation then world transform
+				local localRotCF = CFrame.Angles(math.rad(rotX), math.rad(rotY), math.rad(rotZ))
+				local localPosCF = CFrame.new(localX, localY, localZ) * localRotCF
+				local worldCF = originCF * localPosCF
+				part.CFrame = worldCF
+				part.Anchored = true
+				if transparency > 0 then
+					part.Transparency = transparency
+				end
+				local paletteEntry = palette[paletteKey]
+				if paletteEntry then
+					local _binding_2 = paletteEntry
+					local colorName = _binding_2[1]
+					local materialName = _binding_2[2]
+					local variantName = _binding_2[3]
+					pcall(function()
+						part.BrickColor = BrickColor.new(colorName)
+					end)
+					pcall(function()
+						local mat = MATERIAL_NAMES[materialName]
+						if mat then
+							part.Material = mat
+						end
+					end)
+					if variantName ~= nil and variantName ~= "" then
+						pcall(function()
+							part.MaterialVariant = variantName
+						end)
+					end
+				end
+				part.Parent = model
+				partCount += 1
+			end
+			model.Parent = parentInstance
+			modelCount += 1
+			totalParts += partCount
+			local _arg0 = {
+				name = name,
+				partCount = partCount,
+				modelPath = getInstancePath(model),
+			}
+			table.insert(models, _arg0)
+		end
+		return {
+			success = true,
+			modelCount = modelCount,
+			totalParts = totalParts,
+			models = models,
+		}
+	end)
+	if success and result then
+		finishRecording(recordingId, true)
+		return result
+	else
+		finishRecording(recordingId, false)
+		return {
+			error = `Failed to import scene: {result}`,
+		}
+	end
+end
+local function searchMaterials(requestData)
+	local _condition = (requestData.query)
+	if _condition == nil then
+		_condition = ""
+	end
+	local query = string.lower(_condition)
+	local _condition_1 = (requestData.maxResults)
+	if _condition_1 == nil then
+		_condition_1 = 50
+	end
+	local maxResults = _condition_1
+	local success, result = pcall(function()
+		local children = MaterialService:GetChildren()
+		local materials = {}
+		for _, child in children do
+			if not child:IsA("MaterialVariant") then
+				continue
+			end
+			local nameMatch = query == "" or (string.find(string.lower(child.Name), query)) ~= nil
+			if not nameMatch then
+				continue
+			end
+			local _arg0 = {
+				name = child.Name,
+				baseMaterial = child.BaseMaterial.Name,
+			}
+			table.insert(materials, _arg0)
+			if #materials >= maxResults then
+				break
+			end
+		end
+		return {
+			success = true,
+			materials = materials,
+			total = #materials,
+		}
+	end)
+	if success and result then
+		return result
+	else
+		return {
+			error = `Failed to search materials: {result}`,
+		}
+	end
+end
+return {
+	exportBuild = exportBuild,
+	importBuild = importBuild,
+	importScene = importScene,
+	searchMaterials = searchMaterials,
+}
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="6">
+          <Properties>
             <string name="Name">InstanceHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local Utils = TS.import(script, script.Parent.Parent, "Utils")
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
 local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local convertPropertyValue = _binding.convertPropertyValue
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
 local function createObject(requestData)
 	local className = requestData.className
 	local parentPath = requestData.parent
@@ -490,6 +1340,7 @@ local function createObject(requestData)
 			error = `Parent instance not found: {parentPath}`,
 		}
 	end
+	local recordingId = beginRecording(`Create {className}`)
 	local success, newInstance = pcall(function()
 		local instance = Instance.new(className)
 		if name ~= "" and name then
@@ -501,10 +1352,10 @@ local function createObject(requestData)
 			end)
 		end
 		instance.Parent = parentInstance
-		ChangeHistoryService:SetWaypoint(`Create {className}`)
 		return instance
 	end)
 	if success and newInstance then
+		finishRecording(recordingId, true)
 		return {
 			success = true,
 			className = className,
@@ -514,6 +1365,7 @@ local function createObject(requestData)
 			message = "Object created successfully",
 		}
 	else
+		finishRecording(recordingId, false)
 		return {
 			error = `Failed to create object: {newInstance}`,
 			className = className,
@@ -539,20 +1391,20 @@ local function deleteObject(requestData)
 			error = "Cannot delete the game instance",
 		}
 	end
+	local recordingId = beginRecording(`Delete {instance.ClassName} ({instance.Name})`)
 	local success, result = pcall(function()
-		local name = instance.Name
-		local className = instance.ClassName
 		instance:Destroy()
-		ChangeHistoryService:SetWaypoint(`Delete {className} ({name})`)
 		return true
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return {
 			success = true,
 			instancePath = instancePath,
 			message = "Object deleted successfully",
 		}
 	else
+		finishRecording(recordingId, false)
 		return {
 			error = `Failed to delete object: {result}`,
 			instancePath = instancePath,
@@ -569,6 +1421,7 @@ local function massCreateObjects(requestData)
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
+	local recordingId = beginRecording("Mass create objects")
 	for _, objData in objects do
 		local className = objData.className
 		local parentPath = objData.parent
@@ -626,9 +1479,7 @@ local function massCreateObjects(requestData)
 			})
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Mass create objects")
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -648,6 +1499,7 @@ local function massCreateObjectsWithProperties(requestData)
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
+	local recordingId = beginRecording("Mass create objects with properties")
 	for _, objData in objects do
 		local className = objData.className
 		local parentPath = objData.parent
@@ -714,9 +1566,7 @@ local function massCreateObjectsWithProperties(requestData)
 			})
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint("Mass create objects with properties")
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -726,7 +1576,10 @@ local function massCreateObjectsWithProperties(requestData)
 		},
 	}
 end
-local function smartDuplicate(requestData)
+local function performSmartDuplicate(requestData, useRecording)
+	if useRecording == nil then
+		useRecording = true
+	end
 	local instancePath = requestData.instancePath
 	local count = requestData.count
 	local options = (requestData.options) or {}
@@ -741,6 +1594,7 @@ local function smartDuplicate(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = if useRecording then beginRecording(`Smart duplicate {instance.Name}`) else nil
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
@@ -885,9 +1739,7 @@ local function smartDuplicate(requestData)
 			_i = i
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint(`Smart duplicate {instance.Name} ({successCount} copies)`)
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -897,6 +1749,9 @@ local function smartDuplicate(requestData)
 		},
 		sourceInstance = instancePath,
 	}
+end
+local function smartDuplicate(requestData)
+	return performSmartDuplicate(requestData, true)
 end
 local function massDuplicate(requestData)
 	local duplications = requestData.duplications
@@ -908,17 +1763,16 @@ local function massDuplicate(requestData)
 	local allResults = {}
 	local totalSuccess = 0
 	local totalFailures = 0
+	local recordingId = beginRecording("Mass duplicate operations")
 	for _, duplication in duplications do
-		local result = smartDuplicate(duplication)
+		local result = performSmartDuplicate(duplication, false)
 		table.insert(allResults, result)
 		if result.summary then
 			totalSuccess += result.summary.succeeded
 			totalFailures += result.summary.failed
 		end
 	end
-	if totalSuccess > 0 then
-		ChangeHistoryService:SetWaypoint(`Mass duplicate operations ({totalSuccess} objects)`)
-	end
+	finishRecording(recordingId, totalSuccess > 0)
 	return {
 		results = allResults,
 		summary = {
@@ -939,18 +1793,22 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="5">
+        <Item class="ModuleScript" referent="7">
           <Properties>
             <string name="Name">MetadataHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local CollectionService = TS.import(script, script.Parent.Parent.Parent, "node_modules", "@rbxts", "services").CollectionService
 local Utils = TS.import(script, script.Parent.Parent, "Utils")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local Selection = game:GetService("Selection")
 local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
 local function serializeValue(value)
 	local _value = value
 	local vType = typeof(_value)
@@ -1133,10 +1991,10 @@ local function setAttribute(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = beginRecording(`Set attribute {attributeName} on {instance.Name}`)
 	local success, result = pcall(function()
 		local value = deserializeValue(attributeValue, valueType)
 		instance:SetAttribute(attributeName, value)
-		ChangeHistoryService:SetWaypoint(`Set attribute {attributeName} on {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1146,8 +2004,10 @@ local function setAttribute(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to set attribute: {result}`,
 	}
@@ -1203,10 +2063,10 @@ local function deleteAttribute(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = beginRecording(`Delete attribute {attributeName} from {instance.Name}`)
 	local success, result = pcall(function()
 		local existed = instance:GetAttribute(attributeName) ~= nil
 		instance:SetAttribute(attributeName, nil)
-		ChangeHistoryService:SetWaypoint(`Delete attribute {attributeName} from {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1216,8 +2076,10 @@ local function deleteAttribute(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to delete attribute: {result}`,
 	}
@@ -1264,10 +2126,10 @@ local function addTag(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = beginRecording(`Add tag {tagName} to {instance.Name}`)
 	local success, result = pcall(function()
 		local alreadyHad = CollectionService:HasTag(instance, tagName)
 		CollectionService:AddTag(instance, tagName)
-		ChangeHistoryService:SetWaypoint(`Add tag {tagName} to {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1277,8 +2139,10 @@ local function addTag(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to add tag: {result}`,
 	}
@@ -1297,10 +2161,10 @@ local function removeTag(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = beginRecording(`Remove tag {tagName} from {instance.Name}`)
 	local success, result = pcall(function()
 		local hadTag = CollectionService:HasTag(instance, tagName)
 		CollectionService:RemoveTag(instance, tagName)
-		ChangeHistoryService:SetWaypoint(`Remove tag {tagName} from {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1310,8 +2174,10 @@ local function removeTag(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to remove tag: {result}`,
 	}
@@ -1442,6 +2308,36 @@ local function executeLuau(requestData)
 		}
 	end
 end
+local function undo(_requestData)
+	local success, result = pcall(function()
+		ChangeHistoryService:Undo()
+		return {
+			success = true,
+			message = "Undo executed successfully",
+		}
+	end)
+	if success then
+		return result
+	end
+	return {
+		error = `Failed to undo: {result}`,
+	}
+end
+local function redo(_requestData)
+	local success, result = pcall(function()
+		ChangeHistoryService:Redo()
+		return {
+			success = true,
+			message = "Redo executed successfully",
+		}
+	end)
+	if success then
+		return result
+	end
+	return {
+		error = `Failed to redo: {result}`,
+	}
+end
 return {
 	getAttribute = getAttribute,
 	setAttribute = setAttribute,
@@ -1453,21 +2349,26 @@ return {
 	getTagged = getTagged,
 	getSelection = getSelection,
 	executeLuau = executeLuau,
+	undo = undo,
+	redo = redo,
 }
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="6">
+        <Item class="ModuleScript" referent="8">
           <Properties>
             <string name="Name">PropertyHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local Utils = TS.import(script, script.Parent.Parent, "Utils")
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
 local _binding = Utils
 local getInstanceByPath = _binding.getInstanceByPath
 local convertPropertyValue = _binding.convertPropertyValue
 local evaluateFormula = _binding.evaluateFormula
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
 local function setProperty(requestData)
 	local instancePath = requestData.instancePath
 	local propertyName = requestData.propertyName
@@ -1483,6 +2384,7 @@ local function setProperty(requestData)
 			error = `Instance not found: {instancePath}`,
 		}
 	end
+	local recordingId = beginRecording(`Set {propertyName} property`)
 	local inst = instance
 	local success, result = pcall(function()
 		if propertyName == "Parent" or propertyName == "PrimaryPart" then
@@ -1508,10 +2410,10 @@ local function setProperty(requestData)
 				inst[propertyName] = propertyValue
 			end
 		end
-		ChangeHistoryService:SetWaypoint(`Set {propertyName} property`)
 		return true
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -1520,6 +2422,7 @@ local function setProperty(requestData)
 			message = "Property set successfully",
 		}
 	else
+		finishRecording(recordingId, false)
 		return {
 			error = `Failed to set property: {result}`,
 			instancePath = instancePath,
@@ -1539,6 +2442,7 @@ local function massSetProperty(requestData)
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
+	local recordingId = beginRecording(`Mass set {propertyName} property`)
 	for _, path in paths do
 		local instance = getInstanceByPath(path)
 		if instance then
@@ -1573,9 +2477,7 @@ local function massSetProperty(requestData)
 			table.insert(results, _arg0)
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint(`Mass set {propertyName} property`)
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -1643,6 +2545,7 @@ local function setCalculatedProperty(requestData)
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
+	local recordingId = beginRecording(`Set calculated {propertyName} property`)
 	for i = 0, #paths - 1 do
 		local path = paths[i + 1]
 		local instance = getInstanceByPath(path)
@@ -1695,9 +2598,7 @@ local function setCalculatedProperty(requestData)
 			table.insert(results, _arg0)
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint(`Set calculated {propertyName} property`)
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -1722,6 +2623,7 @@ local function setRelativeProperty(requestData)
 	local results = {}
 	local successCount = 0
 	local failureCount = 0
+	local recordingId = beginRecording(`Set relative {propertyName} property`)
 	local function applyOp(current, op, val)
 		if op == "add" then
 			return current + val
@@ -1834,9 +2736,7 @@ local function setRelativeProperty(requestData)
 			table.insert(results, _arg0)
 		end
 	end
-	if successCount > 0 then
-		ChangeHistoryService:SetWaypoint(`Set relative {propertyName} property`)
-	end
+	finishRecording(recordingId, successCount > 0)
 	return {
 		results = results,
 		summary = {
@@ -1858,7 +2758,7 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="7">
+        <Item class="ModuleScript" referent="9">
           <Properties>
             <string name="Name">QueryHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -2072,6 +2972,11 @@ local function searchObjects(requestData)
 end
 local function getInstanceProperties(requestData)
 	local instancePath = requestData.instancePath
+	local _condition = (requestData.excludeSource)
+	if _condition == nil then
+		_condition = false
+	end
+	local excludeSource = _condition
 	if not (instancePath ~= "" and instancePath) then
 		return {
 			error = "Instance path is required",
@@ -2127,7 +3032,13 @@ local function getInstanceProperties(requestData)
 			end
 		end
 		if instance:IsA("LuaSourceContainer") then
-			properties.Source = readScriptSource(instance)
+			if not excludeSource then
+				properties.Source = readScriptSource(instance)
+			else
+				local src = readScriptSource(instance)
+				properties.SourceLength = #src
+				properties.LineCount = #(Utils.splitLines(src))
+			end
 			if instance:IsA("BaseScript") then
 				properties.Enabled = tostring(instance.Enabled)
 			end
@@ -2494,6 +3405,189 @@ local function getProjectStructure(requestData)
 	result.timestamp = tick()
 	return result
 end
+local function grepScripts(requestData)
+	local pattern = requestData.pattern
+	if not (pattern ~= "" and pattern) then
+		return {
+			error = "pattern is required",
+		}
+	end
+	local _condition = (requestData.caseSensitive)
+	if _condition == nil then
+		_condition = false
+	end
+	local caseSensitive = _condition
+	local _condition_1 = (requestData.contextLines)
+	if _condition_1 == nil then
+		_condition_1 = 0
+	end
+	local contextLines = _condition_1
+	local _condition_2 = (requestData.maxResults)
+	if _condition_2 == nil then
+		_condition_2 = 100
+	end
+	local maxResults = _condition_2
+	local _condition_3 = (requestData.maxResultsPerScript)
+	if _condition_3 == nil then
+		_condition_3 = 0
+	end
+	local maxResultsPerScript = _condition_3
+	local _condition_4 = (requestData.usePattern)
+	if _condition_4 == nil then
+		_condition_4 = false
+	end
+	local usePattern = _condition_4
+	local _condition_5 = (requestData.filesOnly)
+	if _condition_5 == nil then
+		_condition_5 = false
+	end
+	local filesOnly = _condition_5
+	local _condition_6 = (requestData.path)
+	if _condition_6 == nil then
+		_condition_6 = ""
+	end
+	local searchPath = _condition_6
+	local classFilter = requestData.classFilter
+	local startInstance = if searchPath ~= "" then getInstanceByPath(searchPath) else game
+	if not startInstance then
+		return {
+			error = `Path not found: {searchPath}`,
+		}
+	end
+	-- Prepare pattern for matching
+	local searchPattern = if caseSensitive then pattern else string.lower(pattern)
+	local results = {}
+	local totalMatches = 0
+	local scriptsSearched = 0
+	local hitLimit = false
+	local function searchInstance(instance)
+		if hitLimit then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") then
+			-- Apply class filter
+			if classFilter ~= "" and classFilter then
+				local _exp = string.lower(instance.ClassName)
+				local _arg0 = string.lower(classFilter)
+				local _value = (string.find(_exp, _arg0))
+				if not (_value ~= 0 and _value == _value and _value) then
+					return nil
+				end
+			end
+			scriptsSearched += 1
+			local source = readScriptSource(instance)
+			local lines = Utils.splitLines(source)
+			local scriptMatches = {}
+			local scriptMatchCount = 0
+			for i = 0, #lines - 1 do
+				if hitLimit then
+					break
+				end
+				if maxResultsPerScript > 0 and scriptMatchCount >= maxResultsPerScript then
+					break
+				end
+				local line = lines[i + 1]
+				local searchLine = if caseSensitive then line else string.lower(line)
+				local matchStart
+				local matchEnd
+				if usePattern then
+					matchStart, matchEnd = string.find(searchLine, searchPattern)
+				else
+					matchStart, matchEnd = string.find(searchLine, searchPattern, 1, true)
+				end
+				if matchStart ~= nil then
+					scriptMatchCount += 1
+					totalMatches += 1
+					if totalMatches > maxResults then
+						hitLimit = true
+						break
+					end
+					if not filesOnly then
+						-- Gather context lines
+						local before = {}
+						local after = {}
+						if contextLines > 0 then
+							local beforeStart = math.max(0, i - contextLines)
+							do
+								local j = beforeStart
+								local _shouldIncrement = false
+								while true do
+									if _shouldIncrement then
+										j += 1
+									else
+										_shouldIncrement = true
+									end
+									if not (j < i) then
+										break
+									end
+									local _arg0 = lines[j + 1]
+									table.insert(before, _arg0)
+								end
+							end
+							local afterEnd = math.min(#lines - 1, i + contextLines)
+							do
+								local j = i + 1
+								local _shouldIncrement = false
+								while true do
+									if _shouldIncrement then
+										j += 1
+									else
+										_shouldIncrement = true
+									end
+									if not (j <= afterEnd) then
+										break
+									end
+									local _arg0 = lines[j + 1]
+									table.insert(after, _arg0)
+								end
+							end
+						end
+						local _arg0 = {
+							line = i + 1,
+							column = matchStart,
+							text = line,
+							before = before,
+							after = after,
+						}
+						table.insert(scriptMatches, _arg0)
+					end
+				end
+			end
+			if scriptMatchCount > 0 then
+				local _arg0 = {
+					instancePath = getInstancePath(instance),
+					name = instance.Name,
+					className = instance.ClassName,
+					matches = scriptMatches,
+				}
+				table.insert(results, _arg0)
+			end
+		end
+		for _, child in instance:GetChildren() do
+			if hitLimit then
+				return nil
+			end
+			searchInstance(child)
+		end
+	end
+	searchInstance(startInstance)
+	return {
+		results = results,
+		pattern = pattern,
+		totalMatches = if hitLimit then `>{maxResults}` else totalMatches,
+		scriptsSearched = scriptsSearched,
+		scriptsMatched = #results,
+		truncated = hitLimit,
+		options = {
+			caseSensitive = caseSensitive,
+			contextLines = contextLines,
+			usePattern = usePattern,
+			filesOnly = filesOnly,
+			maxResults = maxResults,
+			maxResultsPerScript = maxResultsPerScript,
+		},
+	}
+end
 return {
 	getFileTree = getFileTree,
 	searchFiles = searchFiles,
@@ -2505,17 +3599,18 @@ return {
 	searchByProperty = searchByProperty,
 	getClassInfo = getClassInfo,
 	getProjectStructure = getProjectStructure,
+	grepScripts = grepScripts,
 }
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="8">
+        <Item class="ModuleScript" referent="10">
           <Properties>
             <string name="Name">ScriptHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local Utils = TS.import(script, script.Parent.Parent, "Utils")
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Recording = TS.import(script, script.Parent.Parent, "Recording")
 local ScriptEditorService = game:GetService("ScriptEditorService")
 local _binding = Utils
 local getInstancePath = _binding.getInstancePath
@@ -2523,6 +3618,9 @@ local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
 local splitLines = _binding.splitLines
 local joinLines = _binding.joinLines
+local _binding_1 = Recording
+local beginRecording = _binding_1.beginRecording
+local finishRecording = _binding_1.finishRecording
 local function normalizeEscapes(s)
 	local result = s
 	result = (string.gsub(result, "\\n", "\n"))
@@ -2679,12 +3777,12 @@ local function setScriptSource(requestData)
 		}
 	end
 	local sourceToSet = normalizeEscapes(newSource)
+	local recordingId = beginRecording(`Set script source: {instance.Name}`)
 	local updateSuccess, updateResult = pcall(function()
 		local oldSourceLength = #readScriptSource(instance)
 		ScriptEditorService:UpdateSourceAsync(instance, function()
 			return sourceToSet
 		end)
-		ChangeHistoryService:SetWaypoint(`Set script source: {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2695,12 +3793,12 @@ local function setScriptSource(requestData)
 		}
 	end)
 	if updateSuccess then
+		finishRecording(recordingId, true)
 		return updateResult
 	end
 	local directSuccess, directResult = pcall(function()
 		local oldSource = instance.Source
 		instance.Source = sourceToSet
-		ChangeHistoryService:SetWaypoint(`Set script source: {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2711,6 +3809,7 @@ local function setScriptSource(requestData)
 		}
 	end)
 	if directSuccess then
+		finishRecording(recordingId, true)
 		return directResult
 	end
 	local replaceSuccess, replaceResult = pcall(function()
@@ -2727,7 +3826,6 @@ local function setScriptSource(requestData)
 		end
 		newScript.Parent = parent
 		instance:Destroy()
-		ChangeHistoryService:SetWaypoint(`Replace script: {name}`)
 		return {
 			success = true,
 			instancePath = getInstancePath(newScript),
@@ -2736,8 +3834,10 @@ local function setScriptSource(requestData)
 		}
 	end)
 	if replaceSuccess then
+		finishRecording(recordingId, true)
 		return replaceResult
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to set script source. UpdateSourceAsync failed: {updateResult}. Direct assignment failed: {directResult}. Replace method failed: {replaceResult}`,
 	}
@@ -2764,6 +3864,7 @@ local function editScriptLines(requestData)
 			error = `Instance is not a script-like object: {instance.ClassName}`,
 		}
 	end
+	local recordingId = beginRecording(`Edit script lines {startLine}-{endLine}: {instance.Name}`)
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(readScriptSource(instance))
 		local totalLines = #lines
@@ -2814,7 +3915,6 @@ local function editScriptLines(requestData)
 		ScriptEditorService:UpdateSourceAsync(instance, function()
 			return newSource
 		end)
-		ChangeHistoryService:SetWaypoint(`Edit script lines {startLine}-{endLine}: {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2829,8 +3929,10 @@ local function editScriptLines(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to edit script lines: {result}`,
 	}
@@ -2860,6 +3962,7 @@ local function insertScriptLines(requestData)
 			error = `Instance is not a script-like object: {instance.ClassName}`,
 		}
 	end
+	local recordingId = beginRecording(`Insert script lines after line {afterLine}: {instance.Name}`)
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(readScriptSource(instance))
 		local totalLines = #lines
@@ -2907,7 +4010,6 @@ local function insertScriptLines(requestData)
 		ScriptEditorService:UpdateSourceAsync(instance, function()
 			return newSource
 		end)
-		ChangeHistoryService:SetWaypoint(`Insert script lines after line {afterLine}: {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -2918,8 +4020,10 @@ local function insertScriptLines(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to insert script lines: {result}`,
 	}
@@ -2944,6 +4048,7 @@ local function deleteScriptLines(requestData)
 			error = `Instance is not a script-like object: {instance.ClassName}`,
 		}
 	end
+	local recordingId = beginRecording(`Delete script lines {startLine}-{endLine}: {instance.Name}`)
 	local success, result = pcall(function()
 		local lines, hadTrailingNewline = splitLines(readScriptSource(instance))
 		local totalLines = #lines
@@ -2990,7 +4095,6 @@ local function deleteScriptLines(requestData)
 		ScriptEditorService:UpdateSourceAsync(instance, function()
 			return newSource
 		end)
-		ChangeHistoryService:SetWaypoint(`Delete script lines {startLine}-{endLine}: {instance.Name}`)
 		return {
 			success = true,
 			instancePath = instancePath,
@@ -3004,8 +4108,10 @@ local function deleteScriptLines(requestData)
 		}
 	end)
 	if success then
+		finishRecording(recordingId, true)
 		return result
 	end
+	finishRecording(recordingId, false)
 	return {
 		error = `Failed to delete script lines: {result}`,
 	}
@@ -3020,7 +4126,7 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="9">
+        <Item class="ModuleScript" referent="11">
           <Properties>
             <string name="Name">TestHandlers</string>
             <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -3169,7 +4275,37 @@ return {
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">Recording</string>
+          <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local function beginRecording(actionName)
+	local success, result = pcall(function()
+		return ChangeHistoryService:TryBeginRecording(`MCP: {actionName}`)
+	end)
+	if success then
+		return result
+	end
+	return nil
+end
+local function finishRecording(recordingId, shouldCommit)
+	if recordingId == nil then
+		return nil
+	end
+	local operation = if shouldCommit then Enum.FinishRecordingOperation.Commit else Enum.FinishRecordingOperation.Cancel
+	pcall(function()
+		ChangeHistoryService:FinishRecording(recordingId, operation)
+	end)
+end
+return {
+	beginRecording = beginRecording,
+	finishRecording = finishRecording,
+}
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">State</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -3260,7 +4396,7 @@ return {
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">UI</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -3888,7 +5024,7 @@ return {
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">Utils</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -4418,11 +5554,11 @@ return {
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="16">
+    <Item class="Folder" referent="19">
       <Properties>
         <string name="Name">include</string>
       </Properties>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">Promise</string>
           <string name="Source"><![CDATA[--[[
@@ -6496,7 +7632,7 @@ return Promise
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">RuntimeLib</string>
           <string name="Source"><![CDATA[local Promise = require(script.Parent.Promise)
@@ -6763,15 +7899,15 @@ return TS
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="17">
+    <Item class="Folder" referent="20">
       <Properties>
         <string name="Name">node_modules</string>
       </Properties>
-      <Item class="Folder" referent="18">
+      <Item class="Folder" referent="21">
         <Properties>
           <string name="Name">@rbxts</string>
         </Properties>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">services</string>
           <string name="Source"><![CDATA[return setmetatable({}, {

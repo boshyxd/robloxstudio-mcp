@@ -33,3 +33,4 @@ plugin.Unloading.Connect(() => {
 
 UI.updateUIState();
 Communication.checkForUpdates();
+Communication.activatePlugin(State.getActiveTabIndex());
