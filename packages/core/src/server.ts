@@ -239,18 +239,18 @@ export class RobloxStudioMCPServer {
     // Try to bind as primary
     try {
       primaryApp = createHttpServer(this.tools, this.bridge, this.allowedToolNames);
-      const result = await listenWithRetry(primaryApp, host, basePort, 5);
+      const result = await listenWithRetry(primaryApp, host, basePort, 1);
       httpHandle = result.server;
       boundPort = result.port;
       console.error(`HTTP server listening on ${host}:${boundPort} for Studio plugin (primary mode)`);
     } catch {
-      // All ports in use — fall back to proxy mode
+      // Base port in use — fall back to proxy mode
       bridgeMode = 'proxy';
       primaryApp = undefined;
       const proxyBridge = new ProxyBridgeService(`http://localhost:${basePort}`);
       this.bridge = proxyBridge;
       this.tools = new RobloxStudioTools(this.bridge);
-      console.error(`All ports ${basePort}-${basePort + 4} in use — entering proxy mode (forwarding to localhost:${basePort})`);
+      console.error(`Port ${basePort} in use — entering proxy mode (forwarding to localhost:${basePort})`);
 
       // Periodically try to promote to primary if the port frees up
       const promotionIntervalMs = parseInt(process.env.ROBLOX_STUDIO_PROXY_PROMOTION_INTERVAL_MS || '5000');
@@ -259,7 +259,7 @@ export class RobloxStudioMCPServer {
           this.bridge = new BridgeService();
           this.tools = new RobloxStudioTools(this.bridge);
           primaryApp = createHttpServer(this.tools, this.bridge, this.allowedToolNames);
-          const result = await listenWithRetry(primaryApp, host, basePort, 5);
+          const result = await listenWithRetry(primaryApp, host, basePort, 1);
           httpHandle = result.server;
           boundPort = result.port;
           bridgeMode = 'primary';
