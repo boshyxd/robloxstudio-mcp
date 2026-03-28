@@ -295,10 +295,15 @@ function setProperties(requestData: Record<string, unknown>) {
 			if (propName === "Parent" || propName === "PrimaryPart") {
 				if (typeIs(propValue, "string")) {
 					const refInstance = getInstanceByPath(propValue as string);
-					if (refInstance) inst[propName] = refInstance;
+					if (!refInstance) {
+						error(`${propName} reference not found: ${propValue}`);
+					}
+					inst[propName] = refInstance;
 				}
 			} else if (propName === "Name") {
 				instance.Name = tostring(propValue);
+			} else if (propName === "Source" && instance.IsA("LuaSourceContainer")) {
+				(instance as unknown as { Source: string }).Source = tostring(propValue);
 			} else {
 				const convertedValue = convertPropertyValue(instance, propName as string, propValue);
 				if (convertedValue !== undefined) {

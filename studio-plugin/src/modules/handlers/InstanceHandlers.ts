@@ -382,12 +382,22 @@ function createUITree(requestData: Record<string, unknown>) {
 	const parent = getInstanceByPath(parentPath);
 	if (!parent) return { error: `Parent not found: ${parentPath}` };
 
+	if (!tree.className || !typeIs(tree.className, "string")) {
+		return { error: "Tree root must have a className string" };
+	}
+
 	const recordingId = beginRecording("Create UI tree");
 	let totalCreated = 0;
+	let totalFailed = 0;
+	const errors: string[] = [];
 
 	function createNode(nodeData: Record<string, unknown>, nodeParent: Instance): Instance | undefined {
 		const className = nodeData.className as string;
-		if (!className) return undefined;
+		if (!className) {
+			totalFailed++;
+			errors.push("Node missing className");
+			return undefined;
+		}
 
 		const [success, instance] = pcall(() => {
 			const inst = new Instance(className as keyof CreatableInstances);
@@ -397,9 +407,11 @@ function createUITree(requestData: Record<string, unknown>) {
 			const props = nodeData.properties as Record<string, unknown> | undefined;
 			if (props && typeIs(props, "table")) {
 				for (const [propName, propValue] of pairs(props)) {
-					pcall(() => {
+					const [propSuccess, propErr] = pcall(() => {
 						if (propName === "Name") {
 							inst.Name = tostring(propValue);
+						} else if (propName === "Source" && inst.IsA("LuaSourceContainer")) {
+							(inst as unknown as { Source: string }).Source = tostring(propValue);
 						} else {
 							const converted = convertPropertyValue(inst, propName as string, propValue);
 							if (converted !== undefined) {
@@ -409,6 +421,9 @@ function createUITree(requestData: Record<string, unknown>) {
 							}
 						}
 					});
+					if (!propSuccess) {
+						errors.push(`${className}.${propName}: ${tostring(propErr)}`);
+					}
 				}
 			}
 
@@ -417,7 +432,11 @@ function createUITree(requestData: Record<string, unknown>) {
 			return inst;
 		});
 
-		if (!success || !instance) return undefined;
+		if (!success || !instance) {
+			totalFailed++;
+			errors.push(`Failed to create ${className}: ${tostring(instance)}`);
+			return undefined;
+		}
 		totalCreated++;
 
 		// Recursively create children
@@ -437,11 +456,23 @@ function createUITree(requestData: Record<string, unknown>) {
 
 	finishRecording(recordingId, totalCreated > 0);
 
+	if (!rootInstance) {
+		return {
+			success: false,
+			error: `Failed to create root node (${tree.className})`,
+			totalCreated,
+			totalFailed,
+			errors,
+		};
+	}
+
 	return {
-		success: totalCreated > 0,
+		success: true,
 		totalCreated,
-		rootPath: rootInstance ? getInstancePath(rootInstance) : undefined,
-		message: `Created ${totalCreated} instances`,
+		totalFailed,
+		rootPath: getInstancePath(rootInstance),
+		message: `Created ${totalCreated} instances${totalFailed > 0 ? `, ${totalFailed} failed` : ""}`,
+		errors: errors.size() > 0 ? errors : undefined,
 	};
 }
 

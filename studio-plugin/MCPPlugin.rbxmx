@@ -68,6 +68,7 @@ local routeMap = {
 	["/api/project-structure"] = QueryHandlers.getProjectStructure,
 	["/api/grep-scripts"] = QueryHandlers.grepScripts,
 	["/api/set-property"] = PropertyHandlers.setProperty,
+	["/api/set-properties"] = PropertyHandlers.setProperties,
 	["/api/mass-set-property"] = PropertyHandlers.massSetProperty,
 	["/api/mass-get-property"] = PropertyHandlers.massGetProperty,
 	["/api/set-calculated-property"] = PropertyHandlers.setCalculatedProperty,
@@ -78,6 +79,7 @@ local routeMap = {
 	["/api/delete-object"] = InstanceHandlers.deleteObject,
 	["/api/smart-duplicate"] = InstanceHandlers.smartDuplicate,
 	["/api/mass-duplicate"] = InstanceHandlers.massDuplicate,
+	["/api/create-ui-tree"] = InstanceHandlers.createUITree,
 	["/api/get-script-source"] = ScriptHandlers.getScriptSource,
 	["/api/set-script-source"] = ScriptHandlers.setScriptSource,
 	["/api/edit-script-lines"] = ScriptHandlers.editScriptLines,
@@ -2009,6 +2011,81 @@ local function massDuplicate(requestData)
 		},
 	}
 end
+-- Create an entire UI tree from a nested JSON structure in one call
+-- Each node: { className, name?, properties?, children?: [] }
+local function createUITree(requestData)
+	local tree = requestData.tree
+	local parentPath = requestData.parentPath
+	if not tree or not (parentPath ~= "" and parentPath) then
+		return {
+			error = "Tree object and parentPath are required",
+		}
+	end
+	local parent = getInstanceByPath(parentPath)
+	if not parent then
+		return {
+			error = `Parent not found: {parentPath}`,
+		}
+	end
+	local recordingId = beginRecording("Create UI tree")
+	local totalCreated = 0
+	local function createNode(nodeData, nodeParent)
+		local className = nodeData.className
+		if not (className ~= "" and className) then
+			return nil
+		end
+		local success, instance = pcall(function()
+			local inst = Instance.new(className)
+			local _value = nodeData.name
+			if _value ~= 0 and _value == _value and _value ~= "" and _value then
+				inst.Name = nodeData.name
+			end
+			-- Set properties
+			local props = nodeData.properties
+			if props and type(props) == "table" then
+				for propName, propValue in pairs(props) do
+					pcall(function()
+						if propName == "Name" then
+							inst.Name = tostring(propValue)
+						else
+							local converted = convertPropertyValue(inst, propName, propValue)
+							if converted ~= nil then
+								inst[propName] = converted
+							else
+								inst[propName] = propValue
+							end
+						end
+					end)
+				end
+			end
+			-- Parent LAST (per Roblox best practices)
+			inst.Parent = nodeParent
+			return inst
+		end)
+		if not success or not instance then
+			return nil
+		end
+		totalCreated += 1
+		-- Recursively create children
+		local children = nodeData.children
+		if children and type(children) == "table" then
+			for _, childData in children do
+				if type(childData) == "table" then
+					createNode(childData, instance)
+				end
+			end
+		end
+		return instance
+	end
+	local rootInstance = createNode(tree, parent)
+	finishRecording(recordingId, totalCreated > 0)
+	return {
+		success = totalCreated > 0,
+		totalCreated = totalCreated,
+		rootPath = if rootInstance then getInstancePath(rootInstance) else nil,
+		message = `Created {totalCreated} instances`,
+	}
+end
 return {
 	createObject = createObject,
 	deleteObject = deleteObject,
@@ -2016,6 +2093,7 @@ return {
 	massCreateObjectsWithProperties = massCreateObjectsWithProperties,
 	smartDuplicate = smartDuplicate,
 	massDuplicate = massDuplicate,
+	createUITree = createUITree,
 }
 ]]></string>
           </Properties>
@@ -2975,8 +3053,78 @@ local function setRelativeProperty(requestData)
 		value = value,
 	}
 end
+-- Set multiple properties on a single instance in one call
+local function setProperties(requestData)
+	local instancePath = requestData.instancePath
+	local properties = requestData.properties
+	if not (instancePath ~= "" and instancePath) or not properties or not (type(properties) == "table") then
+		return {
+			error = "Instance path and properties object are required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	local recordingId = beginRecording("Set multiple properties")
+	local inst = instance
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+	for propName, propValue in pairs(properties) do
+		local success, err = pcall(function()
+			if propName == "Parent" or propName == "PrimaryPart" then
+				if type(propValue) == "string" then
+					local refInstance = getInstanceByPath(propValue)
+					if refInstance then
+						inst[propName] = refInstance
+					end
+				end
+			elseif propName == "Name" then
+				instance.Name = tostring(propValue)
+			else
+				local convertedValue = convertPropertyValue(instance, propName, propValue)
+				if convertedValue ~= nil then
+					inst[propName] = convertedValue
+				else
+					inst[propName] = propValue
+				end
+			end
+		end)
+		if success then
+			successCount += 1
+			local _arg0 = {
+				property = propName,
+				success = true,
+			}
+			table.insert(results, _arg0)
+		else
+			failureCount += 1
+			local _arg0 = {
+				property = propName,
+				success = false,
+				error = tostring(err),
+			}
+			table.insert(results, _arg0)
+		end
+	end
+	finishRecording(recordingId, successCount > 0)
+	return {
+		success = successCount > 0,
+		instancePath = instancePath,
+		summary = {
+			total = successCount + failureCount,
+			succeeded = successCount,
+			failed = failureCount,
+		},
+		results = results,
+	}
+end
 return {
 	setProperty = setProperty,
+	setProperties = setProperties,
 	massSetProperty = massSetProperty,
 	massGetProperty = massGetProperty,
 	setCalculatedProperty = setCalculatedProperty,
