@@ -272,8 +272,65 @@ function setRelativeProperty(requestData: Record<string, unknown>) {
 	};
 }
 
+// Set multiple properties on a single instance in one call
+function setProperties(requestData: Record<string, unknown>) {
+	const instancePath = requestData.instancePath as string;
+	const properties = requestData.properties as Record<string, unknown>;
+
+	if (!instancePath || !properties || !typeIs(properties, "table")) {
+		return { error: "Instance path and properties object are required" };
+	}
+
+	const instance = getInstanceByPath(instancePath);
+	if (!instance) return { error: `Instance not found: ${instancePath}` };
+
+	const recordingId = beginRecording("Set multiple properties");
+	const inst = instance as unknown as Record<string, unknown>;
+	const results: Record<string, unknown>[] = [];
+	let successCount = 0;
+	let failureCount = 0;
+
+	for (const [propName, propValue] of pairs(properties as Record<string, unknown>)) {
+		const [success, err] = pcall(() => {
+			if (propName === "Parent" || propName === "PrimaryPart") {
+				if (typeIs(propValue, "string")) {
+					const refInstance = getInstanceByPath(propValue as string);
+					if (refInstance) inst[propName] = refInstance;
+				}
+			} else if (propName === "Name") {
+				instance.Name = tostring(propValue);
+			} else {
+				const convertedValue = convertPropertyValue(instance, propName as string, propValue);
+				if (convertedValue !== undefined) {
+					inst[propName] = convertedValue;
+				} else {
+					inst[propName] = propValue;
+				}
+			}
+		});
+
+		if (success) {
+			successCount++;
+			results.push({ property: propName, success: true });
+		} else {
+			failureCount++;
+			results.push({ property: propName, success: false, error: tostring(err) });
+		}
+	}
+
+	finishRecording(recordingId, successCount > 0);
+
+	return {
+		success: successCount > 0,
+		instancePath,
+		summary: { total: successCount + failureCount, succeeded: successCount, failed: failureCount },
+		results,
+	};
+}
+
 export = {
 	setProperty,
+	setProperties,
 	massSetProperty,
 	massGetProperty,
 	setCalculatedProperty,

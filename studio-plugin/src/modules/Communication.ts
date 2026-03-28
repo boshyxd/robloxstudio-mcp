@@ -30,6 +30,7 @@ const routeMap: Record<string, Handler> = {
 	"/api/grep-scripts": QueryHandlers.grepScripts,
 
 	"/api/set-property": PropertyHandlers.setProperty,
+	"/api/set-properties": PropertyHandlers.setProperties,
 	"/api/mass-set-property": PropertyHandlers.massSetProperty,
 	"/api/mass-get-property": PropertyHandlers.massGetProperty,
 	"/api/set-calculated-property": PropertyHandlers.setCalculatedProperty,
@@ -41,6 +42,7 @@ const routeMap: Record<string, Handler> = {
 	"/api/delete-object": InstanceHandlers.deleteObject,
 	"/api/smart-duplicate": InstanceHandlers.smartDuplicate,
 	"/api/mass-duplicate": InstanceHandlers.massDuplicate,
+	"/api/create-ui-tree": InstanceHandlers.createUITree,
 
 	"/api/get-script-source": ScriptHandlers.getScriptSource,
 	"/api/set-script-source": ScriptHandlers.setScriptSource,

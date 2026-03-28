@@ -183,6 +183,42 @@ export class RobloxStudioTools {
     };
   }
 
+  async setProperties(instancePath: string, properties: Record<string, any>) {
+    if (!instancePath || !properties) {
+      throw new Error('Instance path and properties object are required for set_properties');
+    }
+    const response = await this.client.request('/api/set-properties', {
+      instancePath,
+      properties
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
+  async createUITree(parentPath: string, tree: any) {
+    if (!parentPath || !tree) {
+      throw new Error('Parent path and tree object are required for create_ui_tree');
+    }
+    const response = await this.client.request('/api/create-ui-tree', {
+      parentPath,
+      tree
+    });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
+
   async massSetProperty(paths: string[], propertyName: string, propertyValue: any) {
     if (!paths || paths.length === 0 || !propertyName) {
       throw new Error('Paths array and property name are required for mass_set_property');

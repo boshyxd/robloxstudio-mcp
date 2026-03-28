@@ -211,6 +211,44 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     }
   },
   {
+    name: 'set_properties',
+    category: 'write',
+    description: 'Set multiple properties on a single instance in one call. Much faster than calling set_property multiple times.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instancePath: {
+          type: 'string',
+          description: 'Instance path (dot notation)'
+        },
+        properties: {
+          type: 'object',
+          description: 'Object of property name → value pairs to set'
+        }
+      },
+      required: ['instancePath', 'properties']
+    }
+  },
+  {
+    name: 'create_ui_tree',
+    category: 'write',
+    description: 'Create an entire UI hierarchy from a nested JSON tree in one call. Each node has className, name, properties, and children array. Much faster than multiple create_object calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parentPath: {
+          type: 'string',
+          description: 'Parent instance path where the tree root will be created'
+        },
+        tree: {
+          type: 'object',
+          description: 'Nested tree: { className, name?, properties?: {}, children?: [{...}] }'
+        }
+      },
+      required: ['parentPath', 'tree']
+    }
+  },
+  {
     name: 'mass_set_property',
     category: 'write',
     description: 'Set a property on multiple instances',

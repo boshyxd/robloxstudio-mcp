@@ -98,6 +98,9 @@ export class RobloxStudioMCPServer {
           case 'set_property':
             return await this.tools.setProperty((args as any)?.instancePath as string, (args as any)?.propertyName as string, (args as any)?.propertyValue);
 
+          case 'set_properties':
+            return await this.tools.setProperties((args as any)?.instancePath as string, (args as any)?.properties);
+
           case 'mass_set_property':
             return await this.tools.massSetProperty((args as any)?.paths as string[], (args as any)?.propertyName as string, (args as any)?.propertyValue);
           case 'mass_get_property':
@@ -111,6 +114,9 @@ export class RobloxStudioMCPServer {
             return await this.tools.massCreateObjects((args as any)?.objects);
           case 'delete_object':
             return await this.tools.deleteObject((args as any)?.instancePath as string);
+
+          case 'create_ui_tree':
+            return await this.tools.createUITree((args as any)?.parentPath as string, (args as any)?.tree);
 
           case 'smart_duplicate':
             return await this.tools.smartDuplicate((args as any)?.instancePath as string, (args as any)?.count as number, (args as any)?.options);

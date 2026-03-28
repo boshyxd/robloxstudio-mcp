@@ -369,6 +369,82 @@ function massDuplicate(requestData: Record<string, unknown>) {
 	};
 }
 
+// Create an entire UI tree from a nested JSON structure in one call
+// Each node: { className, name?, properties?, children?: [] }
+function createUITree(requestData: Record<string, unknown>) {
+	const tree = requestData.tree as Record<string, unknown>;
+	const parentPath = requestData.parentPath as string;
+
+	if (!tree || !parentPath) {
+		return { error: "Tree object and parentPath are required" };
+	}
+
+	const parent = getInstanceByPath(parentPath);
+	if (!parent) return { error: `Parent not found: ${parentPath}` };
+
+	const recordingId = beginRecording("Create UI tree");
+	let totalCreated = 0;
+
+	function createNode(nodeData: Record<string, unknown>, nodeParent: Instance): Instance | undefined {
+		const className = nodeData.className as string;
+		if (!className) return undefined;
+
+		const [success, instance] = pcall(() => {
+			const inst = new Instance(className as keyof CreatableInstances);
+			if (nodeData.name) inst.Name = nodeData.name as string;
+
+			// Set properties
+			const props = nodeData.properties as Record<string, unknown> | undefined;
+			if (props && typeIs(props, "table")) {
+				for (const [propName, propValue] of pairs(props)) {
+					pcall(() => {
+						if (propName === "Name") {
+							inst.Name = tostring(propValue);
+						} else {
+							const converted = convertPropertyValue(inst, propName as string, propValue);
+							if (converted !== undefined) {
+								(inst as unknown as Record<string, unknown>)[propName] = converted;
+							} else {
+								(inst as unknown as Record<string, unknown>)[propName] = propValue;
+							}
+						}
+					});
+				}
+			}
+
+			// Parent LAST (per Roblox best practices)
+			inst.Parent = nodeParent;
+			return inst;
+		});
+
+		if (!success || !instance) return undefined;
+		totalCreated++;
+
+		// Recursively create children
+		const children = nodeData.children as Record<string, unknown>[] | undefined;
+		if (children && typeIs(children, "table")) {
+			for (const childData of children) {
+				if (typeIs(childData, "table")) {
+					createNode(childData as Record<string, unknown>, instance as Instance);
+				}
+			}
+		}
+
+		return instance as Instance;
+	}
+
+	const rootInstance = createNode(tree, parent);
+
+	finishRecording(recordingId, totalCreated > 0);
+
+	return {
+		success: totalCreated > 0,
+		totalCreated,
+		rootPath: rootInstance ? getInstancePath(rootInstance) : undefined,
+		message: `Created ${totalCreated} instances`,
+	};
+}
+
 export = {
 	createObject,
 	deleteObject,
@@ -376,4 +452,5 @@ export = {
 	massCreateObjectsWithProperties,
 	smartDuplicate,
 	massDuplicate,
+	createUITree,
 };
