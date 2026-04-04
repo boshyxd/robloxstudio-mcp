@@ -4,6 +4,7 @@ import { runBuildExecutor } from './build-executor.js';
 import { OpenCloudClient } from '../opencloud-client.js';
 import { rgbaToPng } from '../png-encoder.js';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 export class RobloxStudioTools {
@@ -706,21 +707,73 @@ export class RobloxStudioTools {
   }
 
 
-  private static findLibraryPath(): string {
-    // Walk up from the script location to find the repo root (has .gitignore + package.json)
-    let dir = path.dirname(decodeURIComponent(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'));
-    for (let i = 0; i < 6; i++) {
-      const candidate = path.join(dir, 'build-library');
-      if (fs.existsSync(candidate)) return candidate;
-      dir = path.dirname(dir);
+  private static findProjectRoot(startDir: string): string | null {
+    let dir = path.resolve(startDir);
+
+    while (true) {
+      if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'package.json'))) {
+        return dir;
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        return null;
+      }
+      dir = parent;
     }
-    // Fallback: create next to wherever we are
-    const fallback = path.join(dir, 'build-library');
-    fs.mkdirSync(fallback, { recursive: true });
-    return fallback;
   }
 
-  private static readonly LIBRARY_PATH = RobloxStudioTools.findLibraryPath();
+  private static isDirectory(candidate: string | null | undefined): candidate is string {
+    if (!candidate) {
+      return false;
+    }
+
+    try {
+      return fs.statSync(candidate).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  private static uniquePaths(candidates: Array<string | null | undefined>): string[] {
+    return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)).map(candidate => path.resolve(candidate)))];
+  }
+
+  private static findLibraryPath(): string {
+    const overridePath = process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY || process.env.BUILD_LIBRARY_PATH;
+    const cwd = path.resolve(process.cwd());
+    const projectRoot = RobloxStudioTools.findProjectRoot(cwd);
+
+    const existingCandidates = RobloxStudioTools.uniquePaths([
+      overridePath,
+      projectRoot ? path.join(projectRoot, 'build-library') : null,
+      path.join(cwd, 'build-library'),
+    ]);
+
+    for (const candidate of existingCandidates) {
+      if (RobloxStudioTools.isDirectory(candidate)) {
+        return candidate;
+      }
+    }
+
+    const creationCandidates = RobloxStudioTools.uniquePaths([
+      overridePath,
+      projectRoot ? path.join(projectRoot, 'build-library') : null,
+      path.join(cwd, 'build-library'),
+      path.join(os.homedir(), '.robloxstudio-mcp', 'build-library'),
+    ]);
+
+    for (const candidate of creationCandidates) {
+      try {
+        fs.mkdirSync(candidate, { recursive: true });
+        return candidate;
+      } catch {
+        // Try the next candidate. This matters when the package is installed in a read-only location.
+      }
+    }
+
+    throw new Error('Unable to resolve a writable build-library path');
+  }
 
   async exportBuild(instancePath: string, outputId?: string, style: string = 'misc') {
     if (!instancePath) {
@@ -736,7 +789,7 @@ export class RobloxStudioTools {
     if (response && response.success && response.buildData) {
       const buildData = response.buildData;
       const buildId = buildData.id || `${style}/exported`;
-      const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${buildId}.json`);
+      const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${buildId}.json`);
       const dirPath = path.dirname(filePath);
 
       if (!fs.existsSync(dirPath)) {
@@ -779,7 +832,7 @@ export class RobloxStudioTools {
 
     const buildData = { id, style, bounds: computedBounds, palette, parts };
 
-    const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${id}.json`);
+    const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${id}.json`);
     const dirPath = path.dirname(filePath);
 
     if (!fs.existsSync(dirPath)) {
@@ -853,7 +906,7 @@ export class RobloxStudioTools {
     };
     if (seed !== undefined) buildData.generatorSeed = seed;
 
-    const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${id}.json`);
+    const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${id}.json`);
     const dirPath = path.dirname(filePath);
 
     if (!fs.existsSync(dirPath)) {
@@ -887,14 +940,14 @@ export class RobloxStudioTools {
     // If buildData is a string, treat it as a library ID and load the file
     let resolved: Record<string, any>;
     if (typeof buildData === 'string') {
-      const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${buildData}.json`);
+      const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${buildData}.json`);
       if (!fs.existsSync(filePath)) {
         throw new Error(`Build not found in library: ${buildData}`);
       }
       resolved = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     } else if (buildData.id && !buildData.parts) {
       // Object with just an id — try loading from library
-      const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${buildData.id}.json`);
+      const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${buildData.id}.json`);
       if (!fs.existsSync(filePath)) {
         throw new Error(`Build not found in library: ${buildData.id}`);
       }
@@ -919,7 +972,7 @@ export class RobloxStudioTools {
   }
 
   async listLibrary(style?: string) {
-    const libraryPath = RobloxStudioTools.LIBRARY_PATH;
+    const libraryPath = RobloxStudioTools.findLibraryPath();
     const styles = style ? [style] : ['medieval', 'modern', 'nature', 'scifi', 'misc'];
     const builds: Array<{ id: string; style: string; bounds: number[]; partCount: number }> = [];
 
@@ -974,7 +1027,7 @@ export class RobloxStudioTools {
       throw new Error('Build ID is required for get_build');
     }
 
-    const filePath = path.join(RobloxStudioTools.LIBRARY_PATH, `${id}.json`);
+    const filePath = path.join(RobloxStudioTools.findLibraryPath(), `${id}.json`);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Build not found in library: ${id}`);
     }
@@ -1021,7 +1074,7 @@ export class RobloxStudioTools {
       throw new Error('sceneData is required for import_scene');
     }
 
-    const libraryPath = RobloxStudioTools.LIBRARY_PATH;
+    const libraryPath = RobloxStudioTools.findLibraryPath();
     const expandedBuilds: Array<{ buildData: Record<string, any>; position: number[]; rotation: number[]; name: string }> = [];
 
     // Resolve model references from library
