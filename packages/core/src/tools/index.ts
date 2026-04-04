@@ -735,44 +735,49 @@ export class RobloxStudioTools {
     }
   }
 
-  private static uniquePaths(candidates: Array<string | null | undefined>): string[] {
-    return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)).map(candidate => path.resolve(candidate)))];
+  private static ensureWritableDirectory(candidate: string, label: string): string {
+    const resolvedCandidate = path.resolve(candidate);
+
+    try {
+      fs.mkdirSync(resolvedCandidate, { recursive: true });
+    } catch (error) {
+      throw new Error(`Unable to create ${label} build-library directory at ${resolvedCandidate}: ${(error as Error).message}`);
+    }
+
+    if (!RobloxStudioTools.isDirectory(resolvedCandidate)) {
+      throw new Error(`${label} build-library path is not a directory: ${resolvedCandidate}`);
+    }
+
+    try {
+      fs.accessSync(resolvedCandidate, fs.constants.W_OK);
+    } catch (error) {
+      throw new Error(`${label} build-library directory is not writable: ${resolvedCandidate}. ${(error as Error).message}`);
+    }
+
+    return resolvedCandidate;
   }
 
   private static findLibraryPath(): string {
     const overridePath = process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY || process.env.BUILD_LIBRARY_PATH;
     const cwd = path.resolve(process.cwd());
     const projectRoot = RobloxStudioTools.findProjectRoot(cwd);
+    const homeLibraryPath = path.join(os.homedir(), '.robloxstudio-mcp', 'build-library');
 
-    const existingCandidates = RobloxStudioTools.uniquePaths([
-      overridePath,
-      projectRoot ? path.join(projectRoot, 'build-library') : null,
-      path.join(cwd, 'build-library'),
-    ]);
-
-    for (const candidate of existingCandidates) {
-      if (RobloxStudioTools.isDirectory(candidate)) {
-        return candidate;
-      }
+    if (overridePath) {
+      return RobloxStudioTools.ensureWritableDirectory(overridePath, 'override');
     }
 
-    const creationCandidates = RobloxStudioTools.uniquePaths([
-      overridePath,
-      projectRoot ? path.join(projectRoot, 'build-library') : null,
-      path.join(cwd, 'build-library'),
-      path.join(os.homedir(), '.robloxstudio-mcp', 'build-library'),
-    ]);
+    if (projectRoot) {
+      const projectLibraryPath = path.join(projectRoot, 'build-library');
 
-    for (const candidate of creationCandidates) {
       try {
-        fs.mkdirSync(candidate, { recursive: true });
-        return candidate;
+        return RobloxStudioTools.ensureWritableDirectory(projectLibraryPath, 'project-root');
       } catch {
-        // Try the next candidate. This matters when the package is installed in a read-only location.
+        // Fall through to the user-local fallback when the project directory is read-only.
       }
     }
 
-    throw new Error('Unable to resolve a writable build-library path');
+    return RobloxStudioTools.ensureWritableDirectory(homeLibraryPath, 'home');
   }
 
   async exportBuild(instancePath: string, outputId?: string, style: string = 'misc') {
