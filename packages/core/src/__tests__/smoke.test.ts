@@ -146,6 +146,54 @@ describe('Smoke Tests - Connection Fixes', () => {
     }
   });
 
+  test('build library should prefer an existing cwd library over creating a new project-root library', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'robloxstudio-mcp-'));
+    const projectRoot = path.join(tempRoot, 'my-game');
+    const nestedWorkingDir = path.join(projectRoot, 'packages', 'server');
+    const cwdLibraryPath = path.join(nestedWorkingDir, 'build-library');
+    const originalOverride = process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY;
+    const originalLegacyOverride = process.env.BUILD_LIBRARY_PATH;
+
+    fs.mkdirSync(cwdLibraryPath, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'package.json'), '{}');
+
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(nestedWorkingDir);
+    delete process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY;
+    delete process.env.BUILD_LIBRARY_PATH;
+
+    try {
+      const bridge = new BridgeService();
+      const tools = new RobloxStudioTools(bridge);
+      const result = await tools.createBuild(
+        'misc/cwd_build',
+        'misc',
+        { a: ['Bright red', 'Plastic'] },
+        [[0, 0, 0, 1, 1, 1, 0, 0, 0, 'a']]
+      );
+
+      const payload = JSON.parse(result.content[0].text);
+      const expectedPath = path.join(cwdLibraryPath, 'misc', 'cwd_build.json');
+      const projectRootPath = path.join(projectRoot, 'build-library', 'misc', 'cwd_build.json');
+
+      expect(payload.savedTo).toBe(expectedPath);
+      expect(fs.existsSync(expectedPath)).toBe(true);
+      expect(fs.existsSync(projectRootPath)).toBe(false);
+    } finally {
+      cwdSpy.mockRestore();
+      if (originalOverride === undefined) {
+        delete process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY;
+      } else {
+        process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY = originalOverride;
+      }
+      if (originalLegacyOverride === undefined) {
+        delete process.env.BUILD_LIBRARY_PATH;
+      } else {
+        process.env.BUILD_LIBRARY_PATH = originalLegacyOverride;
+      }
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test('build library should fall back to the home directory when project-root is unusable', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'robloxstudio-mcp-'));
     const projectRoot = path.join(tempRoot, 'my-game');

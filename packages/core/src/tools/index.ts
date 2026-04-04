@@ -757,19 +757,41 @@ export class RobloxStudioTools {
     return resolvedCandidate;
   }
 
+  private static findExistingWritableDirectory(candidate: string | null | undefined): string | null {
+    if (!candidate || !RobloxStudioTools.isDirectory(candidate)) {
+      return null;
+    }
+
+    const resolvedCandidate = path.resolve(candidate);
+
+    try {
+      fs.accessSync(resolvedCandidate, fs.constants.W_OK);
+      return resolvedCandidate;
+    } catch {
+      return null;
+    }
+  }
+
   private static findLibraryPath(): string {
     const overridePath = process.env.ROBLOXSTUDIO_MCP_BUILD_LIBRARY || process.env.BUILD_LIBRARY_PATH;
     const cwd = path.resolve(process.cwd());
     const projectRoot = RobloxStudioTools.findProjectRoot(cwd);
     const homeLibraryPath = path.join(os.homedir(), '.robloxstudio-mcp', 'build-library');
+    const projectLibraryPath = projectRoot ? path.join(projectRoot, 'build-library') : null;
+    const cwdLibraryPath = path.join(cwd, 'build-library');
 
     if (overridePath) {
       return RobloxStudioTools.ensureWritableDirectory(overridePath, 'override');
     }
 
-    if (projectRoot) {
-      const projectLibraryPath = path.join(projectRoot, 'build-library');
+    for (const candidate of [projectLibraryPath, cwdLibraryPath]) {
+      const existingPath = RobloxStudioTools.findExistingWritableDirectory(candidate);
+      if (existingPath) {
+        return existingPath;
+      }
+    }
 
+    if (projectLibraryPath) {
       try {
         return RobloxStudioTools.ensureWritableDirectory(projectLibraryPath, 'project-root');
       } catch {
