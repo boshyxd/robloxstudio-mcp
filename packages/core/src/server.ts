@@ -94,6 +94,16 @@ export class RobloxStudioMCPServer {
 
           case 'get_project_structure':
             return await this.tools.getProjectStructure((args as any)?.path, (args as any)?.maxDepth, (args as any)?.scriptsOnly);
+          case 'get_project_map':
+            return await this.tools.getProjectMap(args as any);
+          case 'find_instances':
+            return await this.tools.findInstances(args as any);
+          case 'find_scripts':
+            return await this.tools.findScripts(args as any);
+          case 'find_references':
+            return await this.tools.findReferences(args as any);
+          case 'get_instance_summary':
+            return await this.tools.getInstanceSummary(args as any);
 
           case 'set_property':
             return await this.tools.setProperty((args as any)?.instancePath as string, (args as any)?.propertyName as string, (args as any)?.propertyValue);
@@ -133,6 +143,17 @@ export class RobloxStudioMCPServer {
 
           case 'get_script_source':
             return await this.tools.getScriptSource((args as any)?.instancePath as string, (args as any)?.startLine, (args as any)?.endLine);
+          case 'get_script_outline':
+            return await this.tools.getScriptOutline((args as any)?.instancePath as string);
+          case 'read_script_slice':
+            return await this.tools.readScriptSlice((args as any)?.instancePath as string, {
+              startLine: (args as any)?.startLine,
+              endLine: (args as any)?.endLine,
+              aroundPattern: (args as any)?.aroundPattern,
+              contextLines: (args as any)?.contextLines,
+              maxChars: (args as any)?.maxChars,
+              numbered: (args as any)?.numbered,
+            });
           case 'set_script_source':
             return await this.tools.setScriptSource((args as any)?.instancePath as string, (args as any)?.source as string);
 
