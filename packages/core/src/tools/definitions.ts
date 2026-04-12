@@ -12,7 +12,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'get_file_tree',
     category: 'read',
-    description: 'Get instance hierarchy tree from Studio',
+    description: 'Legacy hierarchy tree. Prefer get_project_map for token-efficient navigation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -97,7 +97,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'get_instance_properties',
     category: 'read',
-    description: 'Get all properties of an instance',
+    description: 'Legacy property dump. Prefer get_instance_summary and read_script_slice for targeted reads.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -167,7 +167,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'get_project_structure',
     category: 'read',
-    description: 'Get full game hierarchy tree. Increase maxDepth (default 3) for deeper traversal.',
+    description: 'Legacy structured hierarchy. Prefer get_project_map/find_instances for compact navigation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -184,6 +184,131 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           description: 'Show only scripts (default: false)'
         }
       }
+    }
+  },
+  {
+    name: 'get_project_map',
+    category: 'read',
+    description: 'Compact project map for navigation. No source; use before reading specific scripts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string', description: 'Root path (default: game)' },
+        maxDepth: { type: 'number', description: 'Max depth (default: 4)' },
+        include: {
+          anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+          description: 'all, scripts, or class names'
+        },
+        maxNodes: { type: 'number', description: 'Max emitted nodes (default: 200)' },
+        offset: { type: 'number', description: 'Pagination offset for emitted nodes' },
+        format: { type: 'string', enum: ['compact', 'json'], description: 'Output format (default: compact)' }
+      }
+    }
+  },
+  {
+    name: 'find_instances',
+    category: 'read',
+    description: 'Find instances with combinable filters and paginated compact output.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string', description: 'Root path (default: game)' },
+        name: { type: 'string', description: 'Name substring' },
+        className: { type: 'string', description: 'ClassName substring' },
+        isA: { type: 'string', description: 'Roblox IsA class filter (e.g. BasePart)' },
+        tag: { type: 'string', description: 'CollectionService tag' },
+        propertyName: { type: 'string', description: 'Property name to test' },
+        propertyValue: { type: 'string', description: 'Optional property value substring' },
+        hasSource: { type: 'boolean', description: 'Only script-like or non-script instances' },
+        maxResults: { type: 'number', description: 'Max results (default: 50)' },
+        offset: { type: 'number', description: 'Pagination offset' }
+      }
+    }
+  },
+  {
+    name: 'find_scripts',
+    category: 'read',
+    description: 'Token-efficient script search. Default returns matching script paths only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string', description: 'Root path (default: game)' },
+        query: { type: 'string', description: 'Literal source substring' },
+        dependency: { type: 'string', description: 'Dependency/module substring to find' },
+        service: { type: 'string', description: 'Service name substring to find' },
+        classFilter: { type: 'string', enum: ['Script', 'LocalScript', 'ModuleScript'], description: 'Script class filter' },
+        maxResults: { type: 'number', description: 'Max results (default: 50)' },
+        offset: { type: 'number', description: 'Pagination offset' },
+        filesOnly: { type: 'boolean', description: 'Return paths/metadata only (default: true)' },
+        includeSnippet: { type: 'boolean', description: 'Include one short matching line' }
+      }
+    }
+  },
+  {
+    name: 'find_references',
+    category: 'read',
+    description: 'Find scripts referencing a module, remote, service, symbol, or literal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string', description: 'Root path (default: game)' },
+        targetPath: { type: 'string', description: 'Instance path for module/remote reference search' },
+        name: { type: 'string', description: 'Target name when no path is available' },
+        referenceType: {
+          type: 'string',
+          enum: ['auto', 'module', 'remote', 'service', 'symbol', 'literal'],
+          description: 'Reference kind (default: auto)'
+        },
+        classFilter: { type: 'string', enum: ['Script', 'LocalScript', 'ModuleScript'], description: 'Script class filter' },
+        maxResults: { type: 'number', description: 'Max matching scripts (default: 50)' },
+        offset: { type: 'number', description: 'Pagination offset' },
+        includeSnippet: { type: 'boolean', description: 'Include one short matching line' }
+      }
+    }
+  },
+  {
+    name: 'get_script_outline',
+    category: 'read',
+    description: 'Script metadata only: lines, hash, requires, services, functions, remotes. No source.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instancePath: { type: 'string', description: 'Script instance path' }
+      },
+      required: ['instancePath']
+    }
+  },
+  {
+    name: 'read_script_slice',
+    category: 'read',
+    description: 'Read a targeted script window by line range or around a literal pattern.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instancePath: { type: 'string', description: 'Script instance path' },
+        startLine: { type: 'number', description: 'Start line' },
+        endLine: { type: 'number', description: 'End line' },
+        aroundPattern: { type: 'string', description: 'Find first literal match and return context' },
+        contextLines: { type: 'number', description: 'Context lines around pattern (default: 6)' },
+        maxChars: { type: 'number', description: 'Max returned characters (default: 12000)' },
+        numbered: { type: 'boolean', description: 'Include line numbers (default: true)' }
+      },
+      required: ['instancePath']
+    }
+  },
+  {
+    name: 'get_instance_summary',
+    category: 'read',
+    description: 'Lightweight instance summary with optional children and named properties; never returns Source.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instancePath: { type: 'string', description: 'Instance path' },
+        includeChildren: { type: 'boolean', description: 'Include immediate child summaries' },
+        propertyNames: { type: 'array', items: { type: 'string' }, description: 'Specific properties to read' },
+        maxChildren: { type: 'number', description: 'Max children when includeChildren is true (default: 50)' }
+      },
+      required: ['instancePath']
     }
   },
 
@@ -505,7 +630,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'get_script_source',
     category: 'read',
-    description: 'Get script source. Returns "source" and "numberedSource" (line-numbered). Use startLine/endLine for large scripts.',
+    description: 'Legacy script read. Prefer get_script_outline then read_script_slice for token-efficient reads.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -801,7 +926,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'grep_scripts',
     category: 'read',
-    description: 'Ripgrep-inspired search across all script sources. Supports literal and Lua pattern matching, context lines, early termination, and results grouped by script with line/column numbers.',
+    description: 'Detailed script grep. Prefer find_scripts for cheap path-first script search.',
     inputSchema: {
       type: 'object',
       properties: {

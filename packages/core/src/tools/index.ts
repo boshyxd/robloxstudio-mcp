@@ -41,6 +41,24 @@ export class RobloxStudioTools {
     this.cookieClient = new RobloxCookieClient();
   }
 
+  private textResponse(text: string) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text
+        }
+      ]
+    };
+  }
+
+  private compactOrJsonResponse(response: any) {
+    if (response && response.format === 'compact' && typeof response.text === 'string') {
+      return this.textResponse(response.text);
+    }
+    return this.textResponse(JSON.stringify(response));
+  }
+
 
   async getFileTree(path: string = '') {
     const response = await this.client.request('/api/file-tree', { path });
@@ -186,6 +204,80 @@ export class RobloxStudioTools {
         }
       ]
     };
+  }
+
+  async getProjectMap(options: {
+    rootPath?: string;
+    maxDepth?: number;
+    include?: string | string[];
+    maxNodes?: number;
+    offset?: number;
+    format?: string;
+  } = {}) {
+    const response = await this.client.request('/api/project-map', options);
+    return this.compactOrJsonResponse(response);
+  }
+
+  async findInstances(options: {
+    rootPath?: string;
+    name?: string;
+    className?: string;
+    isA?: string;
+    tag?: string;
+    propertyName?: string;
+    propertyValue?: string;
+    hasSource?: boolean;
+    maxResults?: number;
+    offset?: number;
+  } = {}) {
+    const response = await this.client.request('/api/find-instances', options);
+    return this.compactOrJsonResponse(response);
+  }
+
+  async findScripts(options: {
+    rootPath?: string;
+    query?: string;
+    dependency?: string;
+    service?: string;
+    classFilter?: string;
+    maxResults?: number;
+    offset?: number;
+    filesOnly?: boolean;
+    includeSnippet?: boolean;
+  } = {}) {
+    const response = await this.client.request('/api/find-scripts', options);
+    return this.compactOrJsonResponse(response);
+  }
+
+  async findReferences(options: {
+    rootPath?: string;
+    targetPath?: string;
+    targetName?: string;
+    name?: string;
+    symbol?: string;
+    service?: string;
+    query?: string;
+    referenceType?: string;
+    classFilter?: string;
+    maxResults?: number;
+    offset?: number;
+    includeSnippet?: boolean;
+  } = {}) {
+    const response = await this.client.request('/api/find-references', options);
+    return this.compactOrJsonResponse(response);
+  }
+
+  async getInstanceSummary(options: {
+    instancePath: string;
+    includeChildren?: boolean;
+    propertyNames?: string[];
+    maxChildren?: number;
+  }) {
+    if (!options?.instancePath) {
+      throw new Error('instancePath is required for get_instance_summary');
+    }
+    const response = await this.client.request('/api/instance-summary', options);
+    return this.compactOrJsonResponse(response);
   }
 
 
@@ -439,6 +531,35 @@ export class RobloxStudioTools {
         text: `${header}\n\n${code}`,
       }]
     };
+  }
+
+  async getScriptOutline(instancePath: string) {
+    if (!instancePath) {
+      throw new Error('instancePath is required for get_script_outline');
+    }
+    const response = await this.client.request('/api/get-script-outline', { instancePath });
+    return this.compactOrJsonResponse(response);
+  }
+
+  async readScriptSlice(
+    instancePath: string,
+    options: {
+      startLine?: number;
+      endLine?: number;
+      aroundPattern?: string;
+      contextLines?: number;
+      maxChars?: number;
+      numbered?: boolean;
+    } = {}
+  ) {
+    if (!instancePath) {
+      throw new Error('instancePath is required for read_script_slice');
+    }
+    const response = await this.client.request('/api/read-script-slice', {
+      instancePath,
+      ...options
+    });
+    return this.compactOrJsonResponse(response);
   }
 
   async setScriptSource(instancePath: string, source: string) {

@@ -78,14 +78,21 @@ local routeMap = {
 	["/api/search-by-property"] = QueryHandlers.searchByProperty,
 	["/api/class-info"] = QueryHandlers.getClassInfo,
 	["/api/project-structure"] = QueryHandlers.getProjectStructure,
+	["/api/project-map"] = QueryHandlers.getProjectMap,
+	["/api/find-instances"] = QueryHandlers.findInstances,
+	["/api/find-scripts"] = QueryHandlers.findScripts,
+	["/api/find-references"] = QueryHandlers.findReferences,
+	["/api/instance-summary"] = QueryHandlers.getInstanceSummary,
 	["/api/grep-scripts"] = QueryHandlers.grepScripts,
 	["/api/get-descendants"] = QueryHandlers.getDescendants,
 	["/api/compare-instances"] = QueryHandlers.compareInstances,
 	["/api/get-output-log"] = QueryHandlers.getOutputLog,
 	["/api/set-property"] = PropertyHandlers.setProperty,
+	["/api/set-properties"] = PropertyHandlers.setProperties,
 	["/api/mass-set-property"] = PropertyHandlers.massSetProperty,
 	["/api/mass-get-property"] = PropertyHandlers.massGetProperty,
 	["/api/create-object"] = InstanceHandlers.createObject,
+	["/api/create-ui-tree"] = InstanceHandlers.createUITree,
 	["/api/mass-create-objects"] = InstanceHandlers.massCreateObjects,
 	["/api/delete-object"] = InstanceHandlers.deleteObject,
 	["/api/smart-duplicate"] = InstanceHandlers.smartDuplicate,
@@ -93,6 +100,8 @@ local routeMap = {
 	["/api/clone-object"] = InstanceHandlers.cloneObject,
 	["/api/move-object"] = InstanceHandlers.moveObject,
 	["/api/get-script-source"] = ScriptHandlers.getScriptSource,
+	["/api/get-script-outline"] = ScriptHandlers.getScriptOutline,
+	["/api/read-script-slice"] = ScriptHandlers.readScriptSlice,
 	["/api/set-script-source"] = ScriptHandlers.setScriptSource,
 	["/api/edit-script-lines"] = ScriptHandlers.editScriptLines,
 	["/api/insert-script-lines"] = ScriptHandlers.insertScriptLines,
@@ -2181,6 +2190,101 @@ local function moveObject(requestData)
 		error = `Failed to move object: {result}`,
 	}
 end
+local function createUITree(requestData)
+	local tree = requestData.tree
+	local parentPath = requestData.parentPath
+	if not tree or not (parentPath ~= "" and parentPath) then
+		return {
+			error = "Tree object and parentPath are required",
+		}
+	end
+	local parent = getInstanceByPath(parentPath)
+	if not parent then
+		return {
+			error = `Parent not found: {parentPath}`,
+		}
+	end
+	local _value = tree.className
+	local _condition = not (_value ~= 0 and _value == _value and _value ~= "" and _value)
+	if not _condition then
+		local _className = tree.className
+		_condition = not (type(_className) == "string")
+	end
+	if _condition then
+		return {
+			error = "Tree root must have a className string",
+		}
+	end
+	local MAX_DEPTH = 20
+	local recordingId = beginRecording("Create UI tree")
+	local totalCreated = 0
+	local totalFailed = 0
+	local errors = {}
+	local function createNode(nodeData, nodeParent, depth)
+		if depth > MAX_DEPTH then
+			totalFailed += 1
+			local _arg0 = `Max depth ({MAX_DEPTH}) exceeded`
+			table.insert(errors, _arg0)
+			return nil
+		end
+		local className = nodeData.className
+		if not (className ~= "" and className) then
+			totalFailed += 1
+			table.insert(errors, "Node missing className")
+			return nil
+		end
+		local success, instance = pcall(function()
+			local inst = Instance.new(className)
+			local _value_1 = nodeData.name
+			if _value_1 ~= 0 and _value_1 == _value_1 and _value_1 ~= "" and _value_1 then
+				inst.Name = nodeData.name
+			end
+			local props = nodeData.properties
+			if props and type(props) == "table" then
+				for propName, propValue in pairs(props) do
+					pcall(function()
+						local converted = convertPropertyValue(inst, propName, propValue)
+						inst[propName] = if converted ~= nil then converted else propValue
+					end)
+				end
+			end
+			inst.Parent = nodeParent
+			return inst
+		end)
+		if not success or not instance then
+			totalFailed += 1
+			local _arg0 = `Failed to create {className}: {tostring(instance)}`
+			table.insert(errors, _arg0)
+			return nil
+		end
+		totalCreated += 1
+		local children = nodeData.children
+		if children and type(children) == "table" then
+			for _, childData in children do
+				if type(childData) == "table" then
+					createNode(childData, instance, depth + 1)
+				end
+			end
+		end
+		return instance
+	end
+	local rootInstance = createNode(tree, parent, 0)
+	finishRecording(recordingId, totalCreated > 0)
+	if not rootInstance then
+		return {
+			error = `Failed to create root node ({tree.className})`,
+			totalCreated = totalCreated,
+			totalFailed = totalFailed,
+			errors = errors,
+		}
+	end
+	return {
+		totalCreated = totalCreated,
+		totalFailed = totalFailed,
+		rootPath = getInstancePath(rootInstance),
+		errors = if #errors > 0 then errors else nil,
+	}
+end
 return {
 	createObject = createObject,
 	deleteObject = deleteObject,
@@ -2189,6 +2293,7 @@ return {
 	massDuplicate = massDuplicate,
 	cloneObject = cloneObject,
 	moveObject = moveObject,
+	createUITree = createUITree,
 }
 ]]></string>
           </Properties>
@@ -2984,10 +3089,77 @@ local function massGetProperty(requestData)
 		propertyName = propertyName,
 	}
 end
+local function setProperties(requestData)
+	local instancePath = requestData.instancePath
+	local properties = requestData.properties
+	if not (instancePath ~= "" and instancePath) or not properties or not (type(properties) == "table") then
+		return {
+			error = "Instance path and properties object are required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	local recordingId = beginRecording("Set multiple properties")
+	local inst = instance
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+	for propName, propValue in pairs(properties) do
+		local success, err = pcall(function()
+			if propName == "Parent" or propName == "PrimaryPart" then
+				if type(propValue) == "string" then
+					local refInstance = getInstanceByPath(propValue)
+					if not refInstance then
+						error(`{propName} reference not found: {propValue}`)
+					end
+					inst[propName] = refInstance
+				end
+			elseif propName == "Name" then
+				instance.Name = tostring(propValue)
+			elseif propName == "Source" and instance:IsA("LuaSourceContainer") then
+				instance.Source = tostring(propValue)
+			else
+				local converted = convertPropertyValue(instance, propName, propValue)
+				inst[propName] = if converted ~= nil then converted else propValue
+			end
+		end)
+		if success then
+			successCount += 1
+			local _arg0 = {
+				property = propName,
+				success = true,
+			}
+			table.insert(results, _arg0)
+		else
+			failureCount += 1
+			local _arg0 = {
+				property = propName,
+				success = false,
+				error = tostring(err),
+			}
+			table.insert(results, _arg0)
+		end
+	end
+	finishRecording(recordingId, successCount > 0)
+	return {
+		instancePath = instancePath,
+		summary = {
+			total = successCount + failureCount,
+			succeeded = successCount,
+			failed = failureCount,
+		},
+		results = results,
+	}
+end
 return {
 	setProperty = setProperty,
 	massSetProperty = massSetProperty,
 	massGetProperty = massGetProperty,
+	setProperties = setProperties,
 }
 ]]></string>
           </Properties>
@@ -3002,6 +3174,963 @@ local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
+local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+local DEFAULT_COMPACT_MAX_NODES = 200
+local DEFAULT_SEARCH_MAX_RESULTS = 50
+local DEFAULT_MAX_CHILDREN = 50
+local MAX_SUMMARY_STRING_LENGTH = 240
+local function getRootInstance(requestData)
+	local _condition = (requestData.rootPath)
+	if _condition == nil then
+		_condition = (requestData.path)
+		if _condition == nil then
+			_condition = "game"
+		end
+	end
+	local rootPath = _condition
+	return getInstanceByPath(rootPath), rootPath
+end
+local function getNumberOption(requestData, name, defaultValue, minValue, maxValue)
+	local rawValue = requestData[name]
+	local numericValue = if type(rawValue) == "number" then rawValue else defaultValue
+	return math.clamp(math.floor(numericValue), minValue, maxValue)
+end
+local function containsIgnoreCase(value, query)
+	if query == nil or query == "" then
+		return true
+	end
+	local _exp = string.lower(tostring(value))
+	local _arg0 = string.lower(query)
+	return (string.find(_exp, _arg0, 1, true)) ~= nil
+end
+local function normalizeStringList(value)
+	local results = {}
+	local _value = value
+	if type(_value) == "string" then
+		for entry in string.gmatch(value, "[^,%s]+") do
+			local _arg0 = string.lower(entry)
+			table.insert(results, _arg0)
+		end
+	else
+		local _value_1 = value
+		if type(_value_1) == "table" then
+			for _, entry in value do
+				if type(entry) == "string" then
+					local _arg0 = string.lower(entry)
+					table.insert(results, _arg0)
+				end
+			end
+		end
+	end
+	return results
+end
+local function normalizeRawStringList(value)
+	local results = {}
+	local _value = value
+	if type(_value) == "string" then
+		for entry in string.gmatch(value, "[^,%s]+") do
+			table.insert(results, entry)
+		end
+	else
+		local _value_1 = value
+		if type(_value_1) == "table" then
+			for _, entry in value do
+				if type(entry) == "string" then
+					table.insert(results, entry)
+				end
+			end
+		end
+	end
+	return results
+end
+local function stringListHas(values, value)
+	local lowerValue = string.lower(value)
+	for _, candidate in values do
+		if candidate == lowerValue then
+			return true
+		end
+	end
+	return false
+end
+local function shouldIncludeInMap(instance, include)
+	if #include == 0 or stringListHas(include, "all") then
+		return true
+	end
+	if stringListHas(include, "scripts") and instance:IsA("LuaSourceContainer") then
+		return true
+	end
+	if stringListHas(include, instance.ClassName) then
+		return true
+	end
+	return false
+end
+local function compactString(value, maxLength)
+	if maxLength == nil then
+		maxLength = MAX_SUMMARY_STRING_LENGTH
+	end
+	local result = (string.gsub((string.gsub(value, "\n", "\\n")), "\r", "\\r"))
+	if #result > maxLength then
+		local _result = result
+		local _maxLength = maxLength
+		result = `{string.sub(_result, 1, _maxLength)}...`
+	end
+	return result
+end
+local function compactValue(value)
+	local _value = value
+	local valueType = typeof(_value)
+	if valueType == "Vector3" then
+		local v = value
+		return {
+			x = v.X,
+			y = v.Y,
+			z = v.Z,
+		}
+	end
+	if valueType == "Vector2" then
+		local v = value
+		return {
+			x = v.X,
+			y = v.Y,
+		}
+	end
+	if valueType == "Color3" then
+		local v = value
+		return {
+			r = v.R,
+			g = v.G,
+			b = v.B,
+		}
+	end
+	if valueType == "CFrame" then
+		local v = value
+		return {
+			position = {
+				x = v.Position.X,
+				y = v.Position.Y,
+				z = v.Position.Z,
+			},
+		}
+	end
+	if valueType == "UDim2" then
+		local v = value
+		return {
+			x = {
+				scale = v.X.Scale,
+				offset = v.X.Offset,
+			},
+			y = {
+				scale = v.Y.Scale,
+				offset = v.Y.Offset,
+			},
+		}
+	end
+	if valueType == "BrickColor" then
+		local v = value
+		return v.Name
+	end
+	local _value_1 = value
+	if type(_value_1) == "string" then
+		return compactString(value)
+	end
+	if value == nil then
+		return "nil"
+	end
+	return tostring(value)
+end
+local function compactValueForText(value)
+	local _value = value
+	if type(_value) == "string" then
+		return value
+	end
+	local _value_1 = value
+	if type(_value_1) == "table" then
+		local ok, encoded = pcall(function()
+			return HttpService:JSONEncode(value)
+		end)
+		if ok then
+			return compactString(encoded)
+		end
+	end
+	return compactString(tostring(value))
+end
+local function formatMapLine(instance, depth)
+	local childCount = #instance:GetChildren()
+	local flags = {}
+	local sourceInfo = ""
+	if instance:IsA("LuaSourceContainer") then
+		table.insert(flags, "source")
+		local source = readScriptSource(instance)
+		local lines = Utils.splitLines(source)
+		sourceInfo = `lines={#lines} len={#source}`
+		if instance:IsA("BaseScript") and not instance.Enabled then
+			table.insert(flags, "disabled")
+		end
+	end
+	if instance:IsA("GuiObject") then
+		table.insert(flags, "gui")
+	end
+	if instance:IsA("BasePart") then
+		table.insert(flags, "part")
+	end
+	local indent = string.rep("  ", depth)
+	return `{indent}{getInstancePath(instance)} | {instance.ClassName} | children={childCount} | flags={if #flags > 0 then table.concat(flags, ",") else "-"} | {sourceInfo}`
+end
+local function getProjectMap(requestData)
+	local rootInstance, rootPath = getRootInstance(requestData)
+	if not rootInstance then
+		return {
+			error = `Path not found: {rootPath}`,
+		}
+	end
+	local maxDepth = getNumberOption(requestData, "maxDepth", 4, 0, 50)
+	local maxNodes = getNumberOption(requestData, "maxNodes", DEFAULT_COMPACT_MAX_NODES, 1, 5000)
+	local offset = getNumberOption(requestData, "offset", 0, 0, math.huge)
+	local include = normalizeStringList(requestData.include)
+	local _condition = (requestData.format)
+	if _condition == nil then
+		_condition = "compact"
+	end
+	local format = string.lower(_condition)
+	local entries = {}
+	local lines = {}
+	local matchingSeen = 0
+	local emitted = 0
+	local truncated = false
+	local depthLimited = false
+	local function visit(instance, depth)
+		if truncated then
+			return nil
+		end
+		if shouldIncludeInMap(instance, include) then
+			if matchingSeen >= offset then
+				if emitted >= maxNodes then
+					truncated = true
+					return nil
+				end
+				local _arg0 = formatMapLine(instance, depth)
+				table.insert(lines, _arg0)
+				local _arg0_1 = {
+					path = getInstancePath(instance),
+					name = instance.Name,
+					className = instance.ClassName,
+					depth = depth,
+					childCount = #instance:GetChildren(),
+					hasSource = instance:IsA("LuaSourceContainer"),
+				}
+				table.insert(entries, _arg0_1)
+				emitted += 1
+			end
+			matchingSeen += 1
+		end
+		local children = instance:GetChildren()
+		if depth >= maxDepth then
+			if #children > 0 then
+				depthLimited = true
+			end
+			return nil
+		end
+		for _, child in children do
+			visit(child, depth + 1)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	visit(rootInstance, 0)
+	local metadata = `project_map root={rootPath} count={emitted} skipped={offset} maxDepth={maxDepth} maxNodes={maxNodes} truncated={truncated or depthLimited}{if truncated then ` nextOffset={offset + emitted}` else ""}`
+	if format == "json" then
+		return {
+			format = "json",
+			rootPath = rootPath,
+			entries = entries,
+			count = emitted,
+			skipped = offset,
+			maxDepth = maxDepth,
+			maxNodes = maxNodes,
+			truncated = truncated or depthLimited,
+			nextOffset = if truncated then offset + emitted else nil,
+			note = if truncated or depthLimited then "Use rootPath/maxDepth/maxNodes/offset to continue or narrow the map." else nil,
+		}
+	end
+	return {
+		format = "compact",
+		text = `{metadata}\npath | class | children | flags | source\n{table.concat(lines, "\n")}`,
+		rootPath = rootPath,
+		count = emitted,
+		skipped = offset,
+		truncated = truncated or depthLimited,
+		nextOffset = if truncated then offset + emitted else nil,
+	}
+end
+local function instanceMatchesFilters(instance, requestData)
+	local name = requestData.name
+	local className = requestData.className
+	local isA = requestData.isA
+	local tag = requestData.tag
+	local propertyName = requestData.propertyName
+	local propertyValue = requestData.propertyValue
+	local hasSource = requestData.hasSource
+	local _condition = name
+	if _condition ~= "" and _condition then
+		_condition = not containsIgnoreCase(instance.Name, name)
+	end
+	if _condition ~= "" and _condition then
+		return false
+	end
+	local _condition_1 = className
+	if _condition_1 ~= "" and _condition_1 then
+		_condition_1 = not containsIgnoreCase(instance.ClassName, className)
+	end
+	if _condition_1 ~= "" and _condition_1 then
+		return false
+	end
+	local _condition_2 = isA
+	if _condition_2 ~= "" and _condition_2 then
+		_condition_2 = not instance:IsA(isA)
+	end
+	if _condition_2 ~= "" and _condition_2 then
+		return false
+	end
+	local _condition_3 = tag
+	if _condition_3 ~= "" and _condition_3 then
+		_condition_3 = not CollectionService:HasTag(instance, tag)
+	end
+	if _condition_3 ~= "" and _condition_3 then
+		return false
+	end
+	if hasSource ~= nil and instance:IsA("LuaSourceContainer") ~= hasSource then
+		return false
+	end
+	if propertyName ~= "" and propertyName then
+		local ok, value = pcall(function()
+			return tostring(instance[propertyName])
+		end)
+		if not ok then
+			return false
+		end
+		if propertyValue ~= nil and not containsIgnoreCase(value, propertyValue) then
+			return false
+		end
+	end
+	return true
+end
+local function formatInstanceResult(instance)
+	local childCount = #instance:GetChildren()
+	local flags = {}
+	if instance:IsA("LuaSourceContainer") then
+		table.insert(flags, "source")
+	end
+	if instance:IsA("BaseScript") and not instance.Enabled then
+		table.insert(flags, "disabled")
+	end
+	if instance:IsA("GuiObject") then
+		table.insert(flags, "gui")
+	end
+	if instance:IsA("BasePart") then
+		table.insert(flags, "part")
+	end
+	return `{getInstancePath(instance)} | {instance.ClassName} | name={instance.Name} | children={childCount} | flags={if #flags > 0 then table.concat(flags, ",") else "-"}`
+end
+local function findInstances(requestData)
+	local rootInstance, rootPath = getRootInstance(requestData)
+	if not rootInstance then
+		return {
+			error = `Path not found: {rootPath}`,
+		}
+	end
+	local maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000)
+	local offset = getNumberOption(requestData, "offset", 0, 0, math.huge)
+	local results = {}
+	local lines = {}
+	local matchedSeen = 0
+	local truncated = false
+	local function visit(instance)
+		if truncated then
+			return nil
+		end
+		if instanceMatchesFilters(instance, requestData) then
+			if matchedSeen >= offset then
+				if #results >= maxResults then
+					truncated = true
+					return nil
+				end
+				local _arg0 = {
+					path = getInstancePath(instance),
+					name = instance.Name,
+					className = instance.ClassName,
+					childCount = #instance:GetChildren(),
+					hasSource = instance:IsA("LuaSourceContainer"),
+				}
+				table.insert(results, _arg0)
+				local _arg0_1 = formatInstanceResult(instance)
+				table.insert(lines, _arg0_1)
+			end
+			matchedSeen += 1
+		end
+		for _, child in instance:GetChildren() do
+			visit(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	visit(rootInstance)
+	return {
+		format = "compact",
+		text = `find_instances root={rootPath} count={#results} skipped={offset} maxResults={maxResults} truncated={truncated}{if truncated then ` nextOffset={offset + #results}` else ""}\npath | class | name | children | flags\n{table.concat(lines, "\n")}`,
+		rootPath = rootPath,
+		results = results,
+		count = #results,
+		skipped = offset,
+		truncated = truncated,
+		nextOffset = if truncated then offset + #results else nil,
+	}
+end
+local function scriptMatchesSource(source, requestData)
+	local query = requestData.query
+	local dependency = requestData.dependency
+	local service = requestData.service
+	local lowerSource = string.lower(source)
+	local _condition = query
+	if _condition ~= "" and _condition then
+		local _arg0 = string.lower(query)
+		_condition = (string.find(lowerSource, _arg0, 1, true)) == nil
+	end
+	if _condition ~= "" and _condition then
+		return false
+	end
+	local _condition_1 = dependency
+	if _condition_1 ~= "" and _condition_1 then
+		local _arg0 = string.lower(dependency)
+		_condition_1 = (string.find(lowerSource, _arg0, 1, true)) == nil
+	end
+	if _condition_1 ~= "" and _condition_1 then
+		return false
+	end
+	local _condition_2 = service
+	if _condition_2 ~= "" and _condition_2 then
+		local _arg0 = string.lower(service)
+		_condition_2 = (string.find(lowerSource, _arg0, 1, true)) == nil
+	end
+	if _condition_2 ~= "" and _condition_2 then
+		return false
+	end
+	return true
+end
+local function findFirstMatchingLine(lines, requestData)
+	local query = requestData.query
+	local dependency = requestData.dependency
+	local service = requestData.service
+	local patterns = {}
+	if query ~= "" and query then
+		local _arg0 = string.lower(query)
+		table.insert(patterns, _arg0)
+	end
+	if dependency ~= "" and dependency then
+		local _arg0 = string.lower(dependency)
+		table.insert(patterns, _arg0)
+	end
+	if service ~= "" and service then
+		local _arg0 = string.lower(service)
+		table.insert(patterns, _arg0)
+	end
+	if #patterns == 0 then
+		return nil, nil
+	end
+	for i = 0, #lines - 1 do
+		local lowerLine = string.lower(lines[i + 1])
+		for _, pattern in patterns do
+			if (string.find(lowerLine, pattern, 1, true)) ~= nil then
+				return i + 1, compactString(lines[i + 1], 220)
+			end
+		end
+	end
+	return nil, nil
+end
+local function findScripts(requestData)
+	local rootInstance, rootPath = getRootInstance(requestData)
+	if not rootInstance then
+		return {
+			error = `Path not found: {rootPath}`,
+		}
+	end
+	local classFilter = requestData.classFilter
+	local _condition = (requestData.filesOnly)
+	if _condition == nil then
+		_condition = true
+	end
+	local filesOnly = _condition
+	local _condition_1 = (requestData.includeSnippet)
+	if _condition_1 == nil then
+		_condition_1 = false
+	end
+	local includeSnippet = _condition_1
+	local maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000)
+	local offset = getNumberOption(requestData, "offset", 0, 0, math.huge)
+	local results = {}
+	local linesOut = {}
+	local matchedSeen = 0
+	local scriptsSearched = 0
+	local truncated = false
+	local function visit(instance)
+		if truncated then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") then
+			if not (classFilter ~= "" and classFilter) or instance.ClassName == classFilter then
+				scriptsSearched += 1
+				local source = readScriptSource(instance)
+				if scriptMatchesSource(source, requestData) then
+					if matchedSeen >= offset then
+						if #results >= maxResults then
+							truncated = true
+							return nil
+						end
+						local sourceLines = Utils.splitLines(source)
+						local matchLine, snippet = findFirstMatchingLine(sourceLines, requestData)
+						local result = {
+							path = getInstancePath(instance),
+							name = instance.Name,
+							className = instance.ClassName,
+							lineCount = #sourceLines,
+							sourceLength = #source,
+							matchLine = matchLine,
+						}
+						if instance:IsA("BaseScript") then
+							result.enabled = instance.Enabled
+						end
+						if not filesOnly or includeSnippet then
+							result.snippet = snippet
+						end
+						table.insert(results, result)
+						local _value = (not filesOnly or includeSnippet) and snippet
+						local snippetPart = if _value ~= "" and _value then ` | line={matchLine} | {snippet}` else ""
+						local _arg0 = `{getInstancePath(instance)} | {instance.ClassName} | lines={#sourceLines} len={#source}{snippetPart}`
+						table.insert(linesOut, _arg0)
+					end
+					matchedSeen += 1
+				end
+			end
+		end
+		for _, child in instance:GetChildren() do
+			visit(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	visit(rootInstance)
+	return {
+		format = "compact",
+		text = `find_scripts root={rootPath} count={#results} scriptsSearched={scriptsSearched} skipped={offset} maxResults={maxResults} filesOnly={filesOnly} truncated={truncated}{if truncated then ` nextOffset={offset + #results}` else ""}\npath | class | lines/sourceLength | snippet\n{table.concat(linesOut, "\n")}`,
+		rootPath = rootPath,
+		results = results,
+		count = #results,
+		scriptsSearched = scriptsSearched,
+		skipped = offset,
+		truncated = truncated,
+		nextOffset = if truncated then offset + #results else nil,
+	}
+end
+local function getLastPathSegment(path)
+	local result
+	for part in string.gmatch(path, "[^%.]+") do
+		result = part
+	end
+	return result
+end
+local function pushUniquePattern(patterns, value)
+	if not (value ~= "" and value) or value == "" then
+		return nil
+	end
+	local lowerValue = string.lower(value)
+	for _, existing in patterns do
+		if existing == lowerValue then
+			return nil
+		end
+	end
+	table.insert(patterns, lowerValue)
+end
+local function inferReferenceType(requestData, targetInstance)
+	local rawType = requestData.referenceType
+	local _condition = rawType
+	if _condition ~= "" and _condition then
+		_condition = rawType ~= "auto"
+	end
+	if _condition ~= "" and _condition then
+		return string.lower(rawType)
+	end
+	local _result = targetInstance
+	if _result ~= nil then
+		_result = _result:IsA("ModuleScript")
+	end
+	if _result then
+		return "module"
+	end
+	local _result_1 = targetInstance
+	if _result_1 ~= nil then
+		_result_1 = _result_1:IsA("RemoteEvent")
+	end
+	local _condition_1 = _result_1
+	if not _condition_1 then
+		local _result_2 = targetInstance
+		if _result_2 ~= nil then
+			_result_2 = _result_2:IsA("RemoteFunction")
+		end
+		_condition_1 = _result_2
+	end
+	if _condition_1 then
+		return "remote"
+	end
+	if requestData.service ~= nil then
+		return "service"
+	end
+	if requestData.symbol ~= nil then
+		return "symbol"
+	end
+	if requestData.query ~= nil then
+		return "literal"
+	end
+	return "literal"
+end
+local function buildReferenceQuery(requestData)
+	local targetPath = requestData.targetPath
+	local targetInstance = if targetPath ~= "" and targetPath then getInstanceByPath(targetPath) else nil
+	local _condition = (requestData.name)
+	if _condition == nil then
+		_condition = (requestData.targetName)
+		if _condition == nil then
+			_condition = (requestData.symbol)
+			if _condition == nil then
+				_condition = (requestData.service)
+				if _condition == nil then
+					_condition = (requestData.query)
+					if _condition == nil then
+						local _result = targetInstance
+						if _result ~= nil then
+							_result = _result.Name
+						end
+						_condition = _result
+						if _condition == nil then
+							_condition = (if targetPath ~= "" and targetPath then getLastPathSegment(targetPath) else nil)
+						end
+					end
+				end
+			end
+		end
+	end
+	local targetName = _condition
+	local referenceType = inferReferenceType(requestData, targetInstance)
+	local patterns = {}
+	pushUniquePattern(patterns, targetName)
+	if targetPath ~= "" and targetPath then
+		pushUniquePattern(patterns, targetPath)
+		pushUniquePattern(patterns, (string.gsub(targetPath, "^game%.", "")))
+	end
+	local _object = {
+		targetPath = targetPath,
+		targetName = targetName,
+		referenceType = referenceType,
+		patterns = patterns,
+	}
+	local _left = "targetClassName"
+	local _result = targetInstance
+	if _result ~= nil then
+		_result = _result.ClassName
+	end
+	_object[_left] = _result
+	return _object
+end
+local function lowerLineHasAnyPattern(lowerLine, patterns)
+	for _, pattern in patterns do
+		if (string.find(lowerLine, pattern, 1, true)) ~= nil then
+			return true
+		end
+	end
+	return false
+end
+local function lowerLineHasRemoteUsage(lowerLine)
+	local remoteTokens = { "remotes", "remoteevent", "remotefunction", "fireserver", "fireclient", "fireallclients", "invokeserver", "invokeclient", "onserverevent", "onclientevent", "onserverinvoke", "onclientinvoke" }
+	for _, token in remoteTokens do
+		if (string.find(lowerLine, token, 1, true)) ~= nil then
+			return true
+		end
+	end
+	return false
+end
+local function lowerLineMatchesReference(lowerLine, referenceType, patterns)
+	if #patterns == 0 then
+		return false
+	end
+	if referenceType == "module" then
+		return (string.find(lowerLine, "require", 1, true)) ~= nil and lowerLineHasAnyPattern(lowerLine, patterns)
+	end
+	if referenceType == "remote" then
+		return lowerLineHasAnyPattern(lowerLine, patterns) and lowerLineHasRemoteUsage(lowerLine)
+	end
+	if referenceType == "service" then
+		local serviceName = patterns[1]
+		local compactLine = (string.gsub(lowerLine, "%s+", ""))
+		local _arg0 = `getservice("{serviceName}")`
+		local _condition = (string.find(compactLine, _arg0, 1, true)) ~= nil
+		if not _condition then
+			local _arg0_1 = `getservice('{serviceName}')`
+			_condition = (string.find(compactLine, _arg0_1, 1, true)) ~= nil
+			if not _condition then
+				local _arg0_2 = `game.{serviceName}`
+				_condition = (string.find(compactLine, _arg0_2, 1, true)) ~= nil
+			end
+		end
+		return _condition
+	end
+	return lowerLineHasAnyPattern(lowerLine, patterns)
+end
+local function findReferenceInLines(lines, referenceType, patterns)
+	local firstLine
+	local firstSnippet
+	local matchCount = 0
+	for i = 0, #lines - 1 do
+		if lowerLineMatchesReference(string.lower(lines[i + 1]), referenceType, patterns) then
+			matchCount += 1
+			if firstLine == nil then
+				firstLine = i + 1
+				firstSnippet = compactString(lines[i + 1], 220)
+			end
+		end
+	end
+	return firstLine, firstSnippet, matchCount
+end
+local function findReferences(requestData)
+	local rootInstance, rootPath = getRootInstance(requestData)
+	if not rootInstance then
+		return {
+			error = `Path not found: {rootPath}`,
+		}
+	end
+	local query = buildReferenceQuery(requestData)
+	local _value = query.targetName
+	local _condition = not (_value ~= "" and _value)
+	if not _condition then
+		_condition = #query.patterns == 0
+	end
+	if _condition then
+		return {
+			error = "name, targetName, targetPath, symbol, service, or query is required",
+		}
+	end
+	local classFilter = requestData.classFilter
+	local _condition_1 = (requestData.includeSnippet)
+	if _condition_1 == nil then
+		_condition_1 = false
+	end
+	local includeSnippet = _condition_1
+	local maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000)
+	local offset = getNumberOption(requestData, "offset", 0, 0, math.huge)
+	local results = {}
+	local linesOut = {}
+	local matchedSeen = 0
+	local scriptsSearched = 0
+	local truncated = false
+	local function visit(instance)
+		if truncated then
+			return nil
+		end
+		if instance:IsA("LuaSourceContainer") and (not (classFilter ~= "" and classFilter) or instance.ClassName == classFilter) then
+			scriptsSearched += 1
+			local source = readScriptSource(instance)
+			local sourceLines = Utils.splitLines(source)
+			local matchLine, snippet, matchCount = findReferenceInLines(sourceLines, query.referenceType, query.patterns)
+			if matchLine ~= nil and matchCount > 0 then
+				if matchedSeen >= offset then
+					if #results >= maxResults then
+						truncated = true
+						return nil
+					end
+					local result = {
+						path = getInstancePath(instance),
+						name = instance.Name,
+						className = instance.ClassName,
+						lineCount = #sourceLines,
+						sourceLength = #source,
+						matchLine = matchLine,
+						matchCount = matchCount,
+					}
+					if instance:IsA("BaseScript") then
+						result.enabled = instance.Enabled
+					end
+					if includeSnippet then
+						result.snippet = snippet
+					end
+					table.insert(results, result)
+					local _value_1 = includeSnippet and snippet
+					local snippetPart = if _value_1 ~= "" and _value_1 then ` | {snippet}` else ""
+					local _arg0 = `{getInstancePath(instance)} | {instance.ClassName} | line={matchLine} | matches={matchCount}{snippetPart}`
+					table.insert(linesOut, _arg0)
+				end
+				matchedSeen += 1
+			end
+		end
+		for _, child in instance:GetChildren() do
+			visit(child)
+			if truncated then
+				return nil
+			end
+		end
+	end
+	visit(rootInstance)
+	local _object = {
+		format = "compact",
+	}
+	local _left = "text"
+	local _exp = query.referenceType
+	local _exp_1 = query.targetName
+	local _condition_2 = query.targetPath
+	if _condition_2 == nil then
+		_condition_2 = "-"
+	end
+	_object[_left] = `find_references root={rootPath} type={_exp} target={_exp_1} targetPath={_condition_2} count={#results} scriptsSearched={scriptsSearched} skipped={offset} maxResults={maxResults} truncated={truncated}{if truncated then ` nextOffset={offset + #results}` else ""}\npath | class | line | matches | snippet\n{table.concat(linesOut, "\n")}`
+	_object.rootPath = rootPath
+	_object.referenceType = query.referenceType
+	_object.targetName = query.targetName
+	_object.targetPath = query.targetPath
+	_object.targetClassName = query.targetClassName
+	_object.results = results
+	_object.count = #results
+	_object.scriptsSearched = scriptsSearched
+	_object.skipped = offset
+	_object.truncated = truncated
+	_object.nextOffset = if truncated then offset + #results else nil
+	return _object
+end
+local function getInstanceSummary(requestData)
+	local instancePath = requestData.instancePath
+	if not (instancePath ~= "" and instancePath) then
+		return {
+			error = "Instance path is required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	local _condition = (requestData.includeChildren)
+	if _condition == nil then
+		_condition = false
+	end
+	local includeChildren = _condition
+	local maxChildren = getNumberOption(requestData, "maxChildren", DEFAULT_MAX_CHILDREN, 1, 500)
+	local propertyNames = normalizeRawStringList(requestData.propertyNames)
+	local sourceInfo = {}
+	if instance:IsA("LuaSourceContainer") then
+		local source = readScriptSource(instance)
+		local lines = Utils.splitLines(source)
+		sourceInfo.hasSource = true
+		sourceInfo.sourceLength = #source
+		sourceInfo.lineCount = #lines
+		if instance:IsA("BaseScript") then
+			sourceInfo.enabled = instance.Enabled
+		end
+	end
+	local properties = {}
+	for _, propertyName in propertyNames do
+		if string.lower(propertyName) == "source" and instance:IsA("LuaSourceContainer") then
+			properties[propertyName] = {
+				omitted = true,
+				reason = "Source is intentionally omitted from get_instance_summary. Use read_script_slice for targeted reads.",
+				sourceLength = sourceInfo.sourceLength,
+				lineCount = sourceInfo.lineCount,
+			}
+			continue
+		end
+		local ok, value = pcall(function()
+			return instance[propertyName]
+		end)
+		if ok then
+			properties[propertyName] = compactValue(value)
+		end
+	end
+	local children = {}
+	if includeChildren then
+		local emittedChildren = 0
+		for _, child in instance:GetChildren() do
+			if emittedChildren >= maxChildren then
+				break
+			end
+			local _arg0 = {
+				name = child.Name,
+				className = child.ClassName,
+				path = getInstancePath(child),
+				childCount = #child:GetChildren(),
+				hasSource = child:IsA("LuaSourceContainer"),
+			}
+			table.insert(children, _arg0)
+			emittedChildren += 1
+		end
+	end
+	local childrenTruncated = if includeChildren then #instance:GetChildren() > maxChildren else nil
+	local _object = {
+		instancePath = instancePath,
+		name = instance.Name,
+		className = instance.ClassName,
+		parent = if instance.Parent then getInstancePath(instance.Parent) else nil,
+		childCount = #instance:GetChildren(),
+	}
+	for _k, _v in sourceInfo do
+		_object[_k] = _v
+	end
+	_object.properties = properties
+	_object.children = if includeChildren then children else nil
+	_object.childrenTruncated = childrenTruncated
+	local summary = _object
+	local propertyLines = {}
+	for propertyName, value in pairs(properties) do
+		local _arg0 = `{propertyName}={compactValueForText(value)}`
+		table.insert(propertyLines, _arg0)
+	end
+	local childLines = {}
+	for _, child in children do
+		local _arg0 = `{child.path} | {child.className} | children={child.childCount} | hasSource={child.hasSource}`
+		table.insert(childLines, _arg0)
+	end
+	local _object_1 = {
+		format = "compact",
+	}
+	local _left = "text"
+	local _array = {}
+	local _length = #_array
+	local _exp = instance.ClassName
+	local _exp_1 = instance.Name
+	local _exp_2 = #instance:GetChildren()
+	local _condition_1 = sourceInfo.hasSource
+	if _condition_1 == nil then
+		_condition_1 = false
+	end
+	_array[_length + 1] = `instance_summary path={instancePath} class={_exp} name={_exp_1} children={_exp_2} hasSource={_condition_1}{if sourceInfo.lineCount ~= nil then ` lines={sourceInfo.lineCount}` else ""}{if sourceInfo.sourceLength ~= nil then ` len={sourceInfo.sourceLength}` else ""}`
+	_array[_length + 2] = `parent={if instance.Parent then getInstancePath(instance.Parent) else "-"}`
+	_array[_length + 3] = `properties: {if #propertyLines > 0 then table.concat(propertyLines, " | ") else "-"}`
+	local _result
+	if includeChildren then
+		local _exp_3 = #children
+		local _condition_2 = childrenTruncated
+		if _condition_2 == nil then
+			_condition_2 = false
+		end
+		_result = `children emitted={_exp_3} truncated={_condition_2}`
+	else
+		_result = "children: omitted"
+	end
+	_array[_length + 4] = _result
+	table.move(childLines, 1, #childLines, _length + 5, _array)
+	_object_1[_left] = table.concat(_array, "\n")
+	for _k, _v in summary do
+		_object_1[_k] = _v
+	end
+	return _object_1
+end
 local function getFileTree(requestData)
 	local _condition = (requestData.path)
 	if _condition == nil then
@@ -4011,6 +5140,11 @@ return {
 	searchByProperty = searchByProperty,
 	getClassInfo = getClassInfo,
 	getProjectStructure = getProjectStructure,
+	getProjectMap = getProjectMap,
+	findInstances = findInstances,
+	findScripts = findScripts,
+	findReferences = findReferences,
+	getInstanceSummary = getInstanceSummary,
 	grepScripts = grepScripts,
 	getDescendants = getDescendants,
 	compareInstances = compareInstances,
@@ -4045,6 +5179,256 @@ local function normalizeEscapes(s)
 	result = (string.gsub(result, '\\"', '"'))
 	result = (string.gsub(result, "\x01", "\\"))
 	return result
+end
+local compactToken
+local function pushUnique(values, value, maxItems)
+	if maxItems == nil then
+		maxItems = 50
+	end
+	if not (value ~= "" and value) or #values >= maxItems then
+		return nil
+	end
+	value = compactToken(value)
+	for _, existing in values do
+		if existing == value then
+			return nil
+		end
+	end
+	local _values = values
+	local _value = value
+	table.insert(_values, _value)
+end
+function compactToken(value, maxLength)
+	if maxLength == nil then
+		maxLength = 180
+	end
+	local result = (string.gsub((string.gsub(value, "\n", "\\n")), "\r", "\\r"))
+	if #result > maxLength then
+		local _result = result
+		local _maxLength = maxLength
+		result = `{string.sub(_result, 1, _maxLength)}...`
+	end
+	return result
+end
+local function computeSourceHash(source)
+	local hash = 5381
+	for i = 1, #source do
+		local _condition = (string.byte(source, i))
+		if _condition == nil then
+			_condition = 0
+		end
+		local byte = _condition
+		hash = (hash * 33 + byte) % 2147483647
+	end
+	return tostring(hash)
+end
+local function getScriptOutline(requestData)
+	local instancePath = requestData.instancePath
+	if not (instancePath ~= "" and instancePath) then
+		return {
+			error = "Instance path is required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	if not instance:IsA("LuaSourceContainer") then
+		return {
+			error = `Instance is not a script-like object: {instance.ClassName}`,
+		}
+	end
+	local source = readScriptSource(instance)
+	local lines = splitLines(source)
+	local requires = {}
+	local services = {}
+	local functions = {}
+	local remoteReferences = {}
+	for match in string.gmatch(source, "require%s*%(([^%)]+)%)") do
+		pushUnique(requires, tostring(match))
+	end
+	for match in string.gmatch(source, [[GetService%s*%(%s*[\"']([^\"']+)[\"']%s*%)]]) do
+		pushUnique(services, tostring(match))
+	end
+	for match in string.gmatch(source, "local%s+function%s+([%w_%.:]+)") do
+		pushUnique(functions, tostring(match))
+	end
+	for match in string.gmatch(source, "function%s+([%w_%.:]+)") do
+		pushUnique(functions, tostring(match))
+	end
+	for match in string.gmatch(source, "([%w_%.:]+)%s*=%s*function") do
+		pushUnique(functions, tostring(match))
+	end
+	local remoteTokens = { "RemoteEvent", "RemoteFunction", "FireServer", "FireClient", "FireAllClients", "InvokeServer", "InvokeClient", "OnServerEvent", "OnClientEvent", "OnServerInvoke", "OnClientInvoke" }
+	for _, token in remoteTokens do
+		if (string.find(source, token, 1, true)) ~= nil then
+			pushUnique(remoteReferences, token)
+		end
+	end
+	local outline = {
+		instancePath = instancePath,
+		className = instance.ClassName,
+		name = instance.Name,
+		sourceLength = #source,
+		lineCount = #lines,
+		sourceHash = computeSourceHash(source),
+		requires = requires,
+		services = services,
+		functions = functions,
+		remoteReferences = remoteReferences,
+	}
+	if instance:IsA("BaseScript") then
+		outline.enabled = instance.Enabled
+	end
+	local formatList = function(label, values)
+		return `{label}: {if #values > 0 then table.concat(values, ", ") else "-"}`
+	end
+	local _object = {
+		format = "compact",
+		text = table.concat({ `script_outline path={instancePath} class={instance.ClassName} lines={#lines} len={#source} hash={outline.sourceHash}{if outline.enabled ~= nil then ` enabled={outline.enabled}` else ""}`, formatList("requires", requires), formatList("services", services), formatList("functions", functions), formatList("remotes", remoteReferences) }, "\n"),
+	}
+	for _k, _v in outline do
+		_object[_k] = _v
+	end
+	return _object
+end
+local function clampLine(value, fallback, minValue, maxValue)
+	local _condition = value
+	if _condition == nil then
+		_condition = fallback
+	end
+	return math.clamp(math.floor(_condition), minValue, maxValue)
+end
+local function readScriptSlice(requestData)
+	local instancePath = requestData.instancePath
+	if not (instancePath ~= "" and instancePath) then
+		return {
+			error = "Instance path is required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	if not instance:IsA("LuaSourceContainer") then
+		return {
+			error = `Instance is not a script-like object: {instance.ClassName}`,
+		}
+	end
+	local source = readScriptSource(instance)
+	local lines = splitLines(source)
+	local totalLines = #lines
+	local aroundPattern = requestData.aroundPattern
+	local _condition = (requestData.contextLines)
+	if _condition == nil then
+		_condition = 6
+	end
+	local contextLines = math.clamp(math.floor(_condition), 0, 100)
+	local _condition_1 = (requestData.maxChars)
+	if _condition_1 == nil then
+		_condition_1 = 12000
+	end
+	local maxChars = math.clamp(math.floor(_condition_1), 1000, 100000)
+	local _condition_2 = (requestData.numbered)
+	if _condition_2 == nil then
+		_condition_2 = true
+	end
+	local numbered = _condition_2
+	local startLine = clampLine(requestData.startLine, 1, 1, totalLines)
+	local endLine = clampLine(requestData.endLine, math.min(totalLines, startLine + 119), 1, totalLines)
+	local matchLine
+	local _condition_3 = aroundPattern
+	if _condition_3 ~= "" and _condition_3 then
+		_condition_3 = aroundPattern ~= ""
+	end
+	if _condition_3 ~= "" and _condition_3 then
+		local query = string.lower(aroundPattern)
+		do
+			local i = 0
+			local _shouldIncrement = false
+			while true do
+				if _shouldIncrement then
+					i += 1
+				else
+					_shouldIncrement = true
+				end
+				if not (i < totalLines) then
+					break
+				end
+				if (string.find(string.lower(lines[i + 1]), query, 1, true)) ~= nil then
+					matchLine = i + 1
+					startLine = math.max(1, matchLine - contextLines)
+					endLine = math.min(totalLines, matchLine + contextLines)
+					break
+				end
+			end
+		end
+		if matchLine == nil then
+			return {
+				format = "compact",
+				text = `script_slice path={instancePath} pattern_not_found={aroundPattern} lineCount={totalLines}`,
+				instancePath = instancePath,
+				lineCount = totalLines,
+				patternFound = false,
+			}
+		end
+	end
+	if endLine < startLine then
+		endLine = startLine
+	end
+	local outLines = {}
+	local charCount = 0
+	local truncated = false
+	do
+		local lineNo = startLine
+		local _shouldIncrement = false
+		while true do
+			if _shouldIncrement then
+				lineNo += 1
+			else
+				_shouldIncrement = true
+			end
+			if not (lineNo <= endLine) then
+				break
+			end
+			local _condition_4 = lines[lineNo]
+			if _condition_4 == nil then
+				_condition_4 = ""
+			end
+			local rawLine = _condition_4
+			local renderedLine = if numbered then `{lineNo}: {rawLine}` else rawLine
+			local nextCharCount = charCount + #renderedLine + 1
+			if nextCharCount > maxChars then
+				local remaining = maxChars - charCount
+				if remaining > 20 then
+					local _arg1 = remaining - 3
+					local _arg0 = `{string.sub(renderedLine, 1, _arg1)}...`
+					table.insert(outLines, _arg0)
+				end
+				truncated = true
+				break
+			end
+			table.insert(outLines, renderedLine)
+			charCount = nextCharCount
+		end
+	end
+	local text = table.concat({ `script_slice path={instancePath} class={instance.ClassName} lines={startLine}-{endLine}/{totalLines} chars={charCount} truncated={truncated}{if matchLine ~= nil then ` matchLine={matchLine}` else ""}`, table.concat(outLines, "\n") }, "\n")
+	return {
+		format = "compact",
+		text = text,
+		instancePath = instancePath,
+		className = instance.ClassName,
+		name = instance.Name,
+		startLine = startLine,
+		endLine = endLine,
+		lineCount = totalLines,
+		matchLine = matchLine,
+		truncated = truncated,
+	}
 end
 local function getScriptSource(requestData)
 	local instancePath = requestData.instancePath
@@ -4164,6 +5548,11 @@ local function getScriptSource(requestData)
 		if instance:IsA("BaseScript") then
 			resp.enabled = instance.Enabled
 		end
+		local topServiceInst = instance
+		while topServiceInst.Parent and topServiceInst.Parent ~= game do
+			topServiceInst = topServiceInst.Parent
+		end
+		resp.topService = topServiceInst.Name
 		return resp
 	end)
 	if success then
@@ -4744,6 +6133,8 @@ local function getScriptAnalysis(requestData)
 end
 return {
 	getScriptSource = getScriptSource,
+	getScriptOutline = getScriptOutline,
+	readScriptSlice = readScriptSlice,
 	setScriptSource = setScriptSource,
 	editScriptLines = editScriptLines,
 	insertScriptLines = insertScriptLines,
@@ -5103,7 +6494,7 @@ return {
         <Properties>
           <string name="Name">State</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
-local CURRENT_VERSION = "2.6.0-next.8"
+local CURRENT_VERSION = "2.6.0"
 local MAX_CONNECTIONS = 5
 local BASE_PORT = 58741
 local activeTabIndex = 0

@@ -1,6 +1,13 @@
 import Utils from "../Utils";
 
 const { getInstancePath, getInstanceByPath, readScriptSource } = Utils;
+const CollectionService = game.GetService("CollectionService");
+const HttpService = game.GetService("HttpService");
+
+const DEFAULT_COMPACT_MAX_NODES = 200;
+const DEFAULT_SEARCH_MAX_RESULTS = 50;
+const DEFAULT_MAX_CHILDREN = 50;
+const MAX_SUMMARY_STRING_LENGTH = 240;
 
 interface TreeNode {
 	name: string;
@@ -10,6 +17,700 @@ interface TreeNode {
 	hasSource?: boolean;
 	scriptType?: string;
 	enabled?: boolean;
+}
+
+function getRootInstance(requestData: Record<string, unknown>): LuaTuple<[Instance | undefined, string]> {
+	const rootPath = (requestData.rootPath as string) ?? (requestData.path as string) ?? "game";
+	return [getInstanceByPath(rootPath), rootPath] as unknown as LuaTuple<[Instance | undefined, string]>;
+}
+
+function getNumberOption(
+	requestData: Record<string, unknown>,
+	name: string,
+	defaultValue: number,
+	minValue: number,
+	maxValue: number,
+): number {
+	const rawValue = requestData[name];
+	const numericValue = typeIs(rawValue, "number") ? rawValue : defaultValue;
+	return math.clamp(math.floor(numericValue), minValue, maxValue);
+}
+
+function containsIgnoreCase(value: unknown, query: string | undefined): boolean {
+	if (query === undefined || query === "") return true;
+	return tostring(value).lower().find(query.lower(), 1, true)[0] !== undefined;
+}
+
+function normalizeStringList(value: unknown): string[] {
+	const results: string[] = [];
+	if (typeIs(value, "string")) {
+		for (const [entry] of value.gmatch("[^,%s]+")) {
+			results.push((entry as string).lower());
+		}
+	} else if (typeIs(value, "table")) {
+		for (const entry of value as unknown[]) {
+			if (typeIs(entry, "string")) results.push(entry.lower());
+		}
+	}
+	return results;
+}
+
+function normalizeRawStringList(value: unknown): string[] {
+	const results: string[] = [];
+	if (typeIs(value, "string")) {
+		for (const [entry] of value.gmatch("[^,%s]+")) {
+			results.push(entry as string);
+		}
+	} else if (typeIs(value, "table")) {
+		for (const entry of value as unknown[]) {
+			if (typeIs(entry, "string")) results.push(entry);
+		}
+	}
+	return results;
+}
+
+function stringListHas(values: string[], value: string): boolean {
+	const lowerValue = value.lower();
+	for (const candidate of values) {
+		if (candidate === lowerValue) return true;
+	}
+	return false;
+}
+
+function shouldIncludeInMap(instance: Instance, include: string[]): boolean {
+	if (include.size() === 0 || stringListHas(include, "all")) return true;
+	if (stringListHas(include, "scripts") && instance.IsA("LuaSourceContainer")) return true;
+	if (stringListHas(include, instance.ClassName)) return true;
+	return false;
+}
+
+function compactString(value: string, maxLength = MAX_SUMMARY_STRING_LENGTH): string {
+	let result = value.gsub("\n", "\\n")[0].gsub("\r", "\\r")[0];
+	if (result.size() > maxLength) {
+		result = `${result.sub(1, maxLength)}...`;
+	}
+	return result;
+}
+
+function compactValue(value: unknown): unknown {
+	const valueType = typeOf(value);
+	if (valueType === "Vector3") {
+		const v = value as Vector3;
+		return { x: v.X, y: v.Y, z: v.Z };
+	}
+	if (valueType === "Vector2") {
+		const v = value as Vector2;
+		return { x: v.X, y: v.Y };
+	}
+	if (valueType === "Color3") {
+		const v = value as Color3;
+		return { r: v.R, g: v.G, b: v.B };
+	}
+	if (valueType === "CFrame") {
+		const v = value as CFrame;
+		return { position: { x: v.Position.X, y: v.Position.Y, z: v.Position.Z } };
+	}
+	if (valueType === "UDim2") {
+		const v = value as UDim2;
+		return {
+			x: { scale: v.X.Scale, offset: v.X.Offset },
+			y: { scale: v.Y.Scale, offset: v.Y.Offset },
+		};
+	}
+	if (valueType === "BrickColor") {
+		const v = value as BrickColor;
+		return v.Name;
+	}
+	if (typeIs(value, "string")) {
+		return compactString(value);
+	}
+	if (value === undefined) return "nil";
+	return tostring(value);
+}
+
+function compactValueForText(value: unknown): string {
+	if (typeIs(value, "string")) return value;
+	if (typeIs(value, "table")) {
+		const [ok, encoded] = pcall(() => HttpService.JSONEncode(value));
+		if (ok) return compactString(encoded);
+	}
+	return compactString(tostring(value));
+}
+
+function formatMapLine(instance: Instance, depth: number): string {
+	const childCount = instance.GetChildren().size();
+	const flags: string[] = [];
+	let sourceInfo = "";
+
+	if (instance.IsA("LuaSourceContainer")) {
+		flags.push("source");
+		const source = readScriptSource(instance);
+		const [lines] = Utils.splitLines(source);
+		sourceInfo = `lines=${lines.size()} len=${source.size()}`;
+		if (instance.IsA("BaseScript") && !instance.Enabled) flags.push("disabled");
+	}
+	if (instance.IsA("GuiObject")) flags.push("gui");
+	if (instance.IsA("BasePart")) flags.push("part");
+
+	const indent = string.rep("  ", depth);
+	return `${indent}${getInstancePath(instance)} | ${instance.ClassName} | children=${childCount} | flags=${flags.size() > 0 ? flags.join(",") : "-"} | ${sourceInfo}`;
+}
+
+function getProjectMap(requestData: Record<string, unknown>) {
+	const [rootInstance, rootPath] = getRootInstance(requestData);
+	if (!rootInstance) return { error: `Path not found: ${rootPath}` };
+
+	const maxDepth = getNumberOption(requestData, "maxDepth", 4, 0, 50);
+	const maxNodes = getNumberOption(requestData, "maxNodes", DEFAULT_COMPACT_MAX_NODES, 1, 5000);
+	const offset = getNumberOption(requestData, "offset", 0, 0, math.huge);
+	const include = normalizeStringList(requestData.include);
+	const format = ((requestData.format as string) ?? "compact").lower();
+
+	const entries: Record<string, unknown>[] = [];
+	const lines: string[] = [];
+	let matchingSeen = 0;
+	let emitted = 0;
+	let truncated = false;
+	let depthLimited = false;
+
+	function visit(instance: Instance, depth: number) {
+		if (truncated) return;
+
+		if (shouldIncludeInMap(instance, include)) {
+			if (matchingSeen >= offset) {
+				if (emitted >= maxNodes) {
+					truncated = true;
+					return;
+				}
+				lines.push(formatMapLine(instance, depth));
+				entries.push({
+					path: getInstancePath(instance),
+					name: instance.Name,
+					className: instance.ClassName,
+					depth,
+					childCount: instance.GetChildren().size(),
+					hasSource: instance.IsA("LuaSourceContainer"),
+				});
+				emitted++;
+			}
+			matchingSeen++;
+		}
+
+		const children = instance.GetChildren();
+		if (depth >= maxDepth) {
+			if (children.size() > 0) depthLimited = true;
+			return;
+		}
+
+		for (const child of children) {
+			visit(child, depth + 1);
+			if (truncated) return;
+		}
+	}
+
+	visit(rootInstance, 0);
+
+	const metadata = `project_map root=${rootPath} count=${emitted} skipped=${offset} maxDepth=${maxDepth} maxNodes=${maxNodes} truncated=${truncated || depthLimited}${truncated ? ` nextOffset=${offset + emitted}` : ""}`;
+	if (format === "json") {
+		return {
+			format: "json",
+			rootPath,
+			entries,
+			count: emitted,
+			skipped: offset,
+			maxDepth,
+			maxNodes,
+			truncated: truncated || depthLimited,
+			nextOffset: truncated ? offset + emitted : undefined,
+			note: truncated || depthLimited ? "Use rootPath/maxDepth/maxNodes/offset to continue or narrow the map." : undefined,
+		};
+	}
+
+	return {
+		format: "compact",
+		text: `${metadata}\npath | class | children | flags | source\n${lines.join("\n")}`,
+		rootPath,
+		count: emitted,
+		skipped: offset,
+		truncated: truncated || depthLimited,
+		nextOffset: truncated ? offset + emitted : undefined,
+	};
+}
+
+function instanceMatchesFilters(instance: Instance, requestData: Record<string, unknown>): boolean {
+	const name = requestData.name as string | undefined;
+	const className = requestData.className as string | undefined;
+	const isA = requestData.isA as string | undefined;
+	const tag = requestData.tag as string | undefined;
+	const propertyName = requestData.propertyName as string | undefined;
+	const propertyValue = requestData.propertyValue as string | undefined;
+	const hasSource = requestData.hasSource as boolean | undefined;
+
+	if (name && !containsIgnoreCase(instance.Name, name)) return false;
+	if (className && !containsIgnoreCase(instance.ClassName, className)) return false;
+	if (isA && !instance.IsA(isA as keyof Instances)) return false;
+	if (tag && !CollectionService.HasTag(instance, tag)) return false;
+	if (hasSource !== undefined && instance.IsA("LuaSourceContainer") !== hasSource) return false;
+	if (propertyName) {
+		const [ok, value] = pcall(() => tostring((instance as unknown as Record<string, unknown>)[propertyName]));
+		if (!ok) return false;
+		if (propertyValue !== undefined && !containsIgnoreCase(value, propertyValue)) return false;
+	}
+
+	return true;
+}
+
+function formatInstanceResult(instance: Instance): string {
+	const childCount = instance.GetChildren().size();
+	const flags: string[] = [];
+	if (instance.IsA("LuaSourceContainer")) flags.push("source");
+	if (instance.IsA("BaseScript") && !instance.Enabled) flags.push("disabled");
+	if (instance.IsA("GuiObject")) flags.push("gui");
+	if (instance.IsA("BasePart")) flags.push("part");
+	return `${getInstancePath(instance)} | ${instance.ClassName} | name=${instance.Name} | children=${childCount} | flags=${flags.size() > 0 ? flags.join(",") : "-"}`;
+}
+
+function findInstances(requestData: Record<string, unknown>) {
+	const [rootInstance, rootPath] = getRootInstance(requestData);
+	if (!rootInstance) return { error: `Path not found: ${rootPath}` };
+
+	const maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000);
+	const offset = getNumberOption(requestData, "offset", 0, 0, math.huge);
+	const results: Record<string, unknown>[] = [];
+	const lines: string[] = [];
+	let matchedSeen = 0;
+	let truncated = false;
+
+	function visit(instance: Instance) {
+		if (truncated) return;
+		if (instanceMatchesFilters(instance, requestData)) {
+			if (matchedSeen >= offset) {
+				if (results.size() >= maxResults) {
+					truncated = true;
+					return;
+				}
+				results.push({
+					path: getInstancePath(instance),
+					name: instance.Name,
+					className: instance.ClassName,
+					childCount: instance.GetChildren().size(),
+					hasSource: instance.IsA("LuaSourceContainer"),
+				});
+				lines.push(formatInstanceResult(instance));
+			}
+			matchedSeen++;
+		}
+
+		for (const child of instance.GetChildren()) {
+			visit(child);
+			if (truncated) return;
+		}
+	}
+
+	visit(rootInstance);
+
+	return {
+		format: "compact",
+		text: `find_instances root=${rootPath} count=${results.size()} skipped=${offset} maxResults=${maxResults} truncated=${truncated}${truncated ? ` nextOffset=${offset + results.size()}` : ""}\npath | class | name | children | flags\n${lines.join("\n")}`,
+		rootPath,
+		results,
+		count: results.size(),
+		skipped: offset,
+		truncated,
+		nextOffset: truncated ? offset + results.size() : undefined,
+	};
+}
+
+function scriptMatchesSource(source: string, requestData: Record<string, unknown>): boolean {
+	const query = requestData.query as string | undefined;
+	const dependency = requestData.dependency as string | undefined;
+	const service = requestData.service as string | undefined;
+	const lowerSource = source.lower();
+
+	if (query && lowerSource.find(query.lower(), 1, true)[0] === undefined) return false;
+	if (dependency && lowerSource.find(dependency.lower(), 1, true)[0] === undefined) return false;
+	if (service && lowerSource.find(service.lower(), 1, true)[0] === undefined) return false;
+	return true;
+}
+
+function findFirstMatchingLine(lines: string[], requestData: Record<string, unknown>): LuaTuple<[number | undefined, string | undefined]> {
+	const query = requestData.query as string | undefined;
+	const dependency = requestData.dependency as string | undefined;
+	const service = requestData.service as string | undefined;
+	const patterns: string[] = [];
+	if (query) patterns.push(query.lower());
+	if (dependency) patterns.push(dependency.lower());
+	if (service) patterns.push(service.lower());
+	if (patterns.size() === 0) return [undefined, undefined] as unknown as LuaTuple<[number | undefined, string | undefined]>;
+
+	for (let i = 0; i < lines.size(); i++) {
+		const lowerLine = lines[i].lower();
+		for (const pattern of patterns) {
+			if (lowerLine.find(pattern, 1, true)[0] !== undefined) {
+				return [i + 1, compactString(lines[i], 220)] as unknown as LuaTuple<[number | undefined, string | undefined]>;
+			}
+		}
+	}
+	return [undefined, undefined] as unknown as LuaTuple<[number | undefined, string | undefined]>;
+}
+
+function findScripts(requestData: Record<string, unknown>) {
+	const [rootInstance, rootPath] = getRootInstance(requestData);
+	if (!rootInstance) return { error: `Path not found: ${rootPath}` };
+
+	const classFilter = requestData.classFilter as string | undefined;
+	const filesOnly = (requestData.filesOnly as boolean) ?? true;
+	const includeSnippet = (requestData.includeSnippet as boolean) ?? false;
+	const maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000);
+	const offset = getNumberOption(requestData, "offset", 0, 0, math.huge);
+	const results: Record<string, unknown>[] = [];
+	const linesOut: string[] = [];
+	let matchedSeen = 0;
+	let scriptsSearched = 0;
+	let truncated = false;
+
+	function visit(instance: Instance) {
+		if (truncated) return;
+
+		if (instance.IsA("LuaSourceContainer")) {
+			if (!classFilter || instance.ClassName === classFilter) {
+				scriptsSearched++;
+				const source = readScriptSource(instance);
+				if (scriptMatchesSource(source, requestData)) {
+					if (matchedSeen >= offset) {
+						if (results.size() >= maxResults) {
+							truncated = true;
+							return;
+						}
+
+						const [sourceLines] = Utils.splitLines(source);
+						const [matchLine, snippet] = findFirstMatchingLine(sourceLines, requestData);
+						const result: Record<string, unknown> = {
+							path: getInstancePath(instance),
+							name: instance.Name,
+							className: instance.ClassName,
+							lineCount: sourceLines.size(),
+							sourceLength: source.size(),
+							matchLine,
+						};
+						if (instance.IsA("BaseScript")) result.enabled = instance.Enabled;
+						if (!filesOnly || includeSnippet) result.snippet = snippet;
+						results.push(result);
+
+						const snippetPart = (!filesOnly || includeSnippet) && snippet ? ` | line=${matchLine} | ${snippet}` : "";
+						linesOut.push(`${getInstancePath(instance)} | ${instance.ClassName} | lines=${sourceLines.size()} len=${source.size()}${snippetPart}`);
+					}
+					matchedSeen++;
+				}
+			}
+		}
+
+		for (const child of instance.GetChildren()) {
+			visit(child);
+			if (truncated) return;
+		}
+	}
+
+	visit(rootInstance);
+
+	return {
+		format: "compact",
+		text: `find_scripts root=${rootPath} count=${results.size()} scriptsSearched=${scriptsSearched} skipped=${offset} maxResults=${maxResults} filesOnly=${filesOnly} truncated=${truncated}${truncated ? ` nextOffset=${offset + results.size()}` : ""}\npath | class | lines/sourceLength | snippet\n${linesOut.join("\n")}`,
+		rootPath,
+		results,
+		count: results.size(),
+		scriptsSearched,
+		skipped: offset,
+		truncated,
+		nextOffset: truncated ? offset + results.size() : undefined,
+	};
+}
+
+function getLastPathSegment(path: string): string | undefined {
+	let result: string | undefined;
+	for (const [part] of path.gmatch("[^%.]+")) {
+		result = part as string;
+	}
+	return result;
+}
+
+function pushUniquePattern(patterns: string[], value: string | undefined) {
+	if (!value || value === "") return;
+	const lowerValue = value.lower();
+	for (const existing of patterns) {
+		if (existing === lowerValue) return;
+	}
+	patterns.push(lowerValue);
+}
+
+function inferReferenceType(requestData: Record<string, unknown>, targetInstance: Instance | undefined): string {
+	const rawType = requestData.referenceType as string | undefined;
+	if (rawType && rawType !== "auto") return rawType.lower();
+	if (targetInstance?.IsA("ModuleScript")) return "module";
+	if (targetInstance?.IsA("RemoteEvent") || targetInstance?.IsA("RemoteFunction")) return "remote";
+	if (requestData.service !== undefined) return "service";
+	if (requestData.symbol !== undefined) return "symbol";
+	if (requestData.query !== undefined) return "literal";
+	return "literal";
+}
+
+function buildReferenceQuery(requestData: Record<string, unknown>) {
+	const targetPath = requestData.targetPath as string | undefined;
+	const targetInstance = targetPath ? getInstanceByPath(targetPath) : undefined;
+	const targetName =
+		(requestData.name as string | undefined) ??
+		(requestData.targetName as string | undefined) ??
+		(requestData.symbol as string | undefined) ??
+		(requestData.service as string | undefined) ??
+		(requestData.query as string | undefined) ??
+		targetInstance?.Name ??
+		(targetPath ? getLastPathSegment(targetPath) : undefined);
+	const referenceType = inferReferenceType(requestData, targetInstance);
+	const patterns: string[] = [];
+
+	pushUniquePattern(patterns, targetName);
+	if (targetPath) {
+		pushUniquePattern(patterns, targetPath);
+		pushUniquePattern(patterns, targetPath.gsub("^game%.", "")[0]);
+	}
+
+	return {
+		targetPath,
+		targetName,
+		referenceType,
+		patterns,
+		targetClassName: targetInstance?.ClassName,
+	};
+}
+
+function lowerLineHasAnyPattern(lowerLine: string, patterns: string[]): boolean {
+	for (const pattern of patterns) {
+		if (lowerLine.find(pattern, 1, true)[0] !== undefined) return true;
+	}
+	return false;
+}
+
+function lowerLineHasRemoteUsage(lowerLine: string): boolean {
+	const remoteTokens = [
+		"remotes", "remoteevent", "remotefunction", "fireserver", "fireclient", "fireallclients",
+		"invokeserver", "invokeclient", "onserverevent", "onclientevent",
+		"onserverinvoke", "onclientinvoke",
+	];
+	for (const token of remoteTokens) {
+		if (lowerLine.find(token, 1, true)[0] !== undefined) return true;
+	}
+	return false;
+}
+
+function lowerLineMatchesReference(lowerLine: string, referenceType: string, patterns: string[]): boolean {
+	if (patterns.size() === 0) return false;
+	if (referenceType === "module") {
+		return lowerLine.find("require", 1, true)[0] !== undefined && lowerLineHasAnyPattern(lowerLine, patterns);
+	}
+	if (referenceType === "remote") {
+		return lowerLineHasAnyPattern(lowerLine, patterns) && lowerLineHasRemoteUsage(lowerLine);
+	}
+	if (referenceType === "service") {
+		const serviceName = patterns[0];
+		const compactLine = lowerLine.gsub("%s+", "")[0];
+		return (
+			compactLine.find(`getservice("${serviceName}")`, 1, true)[0] !== undefined ||
+			compactLine.find(`getservice('${serviceName}')`, 1, true)[0] !== undefined ||
+			compactLine.find(`game.${serviceName}`, 1, true)[0] !== undefined
+		);
+	}
+	return lowerLineHasAnyPattern(lowerLine, patterns);
+}
+
+function findReferenceInLines(
+	lines: string[],
+	referenceType: string,
+	patterns: string[],
+): LuaTuple<[number | undefined, string | undefined, number]> {
+	let firstLine: number | undefined;
+	let firstSnippet: string | undefined;
+	let matchCount = 0;
+
+	for (let i = 0; i < lines.size(); i++) {
+		if (lowerLineMatchesReference(lines[i].lower(), referenceType, patterns)) {
+			matchCount++;
+			if (firstLine === undefined) {
+				firstLine = i + 1;
+				firstSnippet = compactString(lines[i], 220);
+			}
+		}
+	}
+
+	return [firstLine, firstSnippet, matchCount] as unknown as LuaTuple<[number | undefined, string | undefined, number]>;
+}
+
+function findReferences(requestData: Record<string, unknown>) {
+	const [rootInstance, rootPath] = getRootInstance(requestData);
+	if (!rootInstance) return { error: `Path not found: ${rootPath}` };
+
+	const query = buildReferenceQuery(requestData);
+	if (!query.targetName || query.patterns.size() === 0) {
+		return { error: "name, targetName, targetPath, symbol, service, or query is required" };
+	}
+
+	const classFilter = requestData.classFilter as string | undefined;
+	const includeSnippet = (requestData.includeSnippet as boolean) ?? false;
+	const maxResults = getNumberOption(requestData, "maxResults", DEFAULT_SEARCH_MAX_RESULTS, 1, 1000);
+	const offset = getNumberOption(requestData, "offset", 0, 0, math.huge);
+	const results: Record<string, unknown>[] = [];
+	const linesOut: string[] = [];
+	let matchedSeen = 0;
+	let scriptsSearched = 0;
+	let truncated = false;
+
+	function visit(instance: Instance) {
+		if (truncated) return;
+
+		if (instance.IsA("LuaSourceContainer") && (!classFilter || instance.ClassName === classFilter)) {
+			scriptsSearched++;
+			const source = readScriptSource(instance);
+			const [sourceLines] = Utils.splitLines(source);
+			const [matchLine, snippet, matchCount] = findReferenceInLines(sourceLines, query.referenceType, query.patterns);
+
+			if (matchLine !== undefined && matchCount > 0) {
+				if (matchedSeen >= offset) {
+					if (results.size() >= maxResults) {
+						truncated = true;
+						return;
+					}
+
+					const result: Record<string, unknown> = {
+						path: getInstancePath(instance),
+						name: instance.Name,
+						className: instance.ClassName,
+						lineCount: sourceLines.size(),
+						sourceLength: source.size(),
+						matchLine,
+						matchCount,
+					};
+					if (instance.IsA("BaseScript")) result.enabled = instance.Enabled;
+					if (includeSnippet) result.snippet = snippet;
+					results.push(result);
+
+					const snippetPart = includeSnippet && snippet ? ` | ${snippet}` : "";
+					linesOut.push(`${getInstancePath(instance)} | ${instance.ClassName} | line=${matchLine} | matches=${matchCount}${snippetPart}`);
+				}
+				matchedSeen++;
+			}
+		}
+
+		for (const child of instance.GetChildren()) {
+			visit(child);
+			if (truncated) return;
+		}
+	}
+
+	visit(rootInstance);
+
+	return {
+		format: "compact",
+		text: `find_references root=${rootPath} type=${query.referenceType} target=${query.targetName} targetPath=${query.targetPath ?? "-"} count=${results.size()} scriptsSearched=${scriptsSearched} skipped=${offset} maxResults=${maxResults} truncated=${truncated}${truncated ? ` nextOffset=${offset + results.size()}` : ""}\npath | class | line | matches | snippet\n${linesOut.join("\n")}`,
+		rootPath,
+		referenceType: query.referenceType,
+		targetName: query.targetName,
+		targetPath: query.targetPath,
+		targetClassName: query.targetClassName,
+		results,
+		count: results.size(),
+		scriptsSearched,
+		skipped: offset,
+		truncated,
+		nextOffset: truncated ? offset + results.size() : undefined,
+	};
+}
+
+function getInstanceSummary(requestData: Record<string, unknown>) {
+	const instancePath = requestData.instancePath as string;
+	if (!instancePath) return { error: "Instance path is required" };
+
+	const instance = getInstanceByPath(instancePath);
+	if (!instance) return { error: `Instance not found: ${instancePath}` };
+
+	const includeChildren = (requestData.includeChildren as boolean) ?? false;
+	const maxChildren = getNumberOption(requestData, "maxChildren", DEFAULT_MAX_CHILDREN, 1, 500);
+	const propertyNames = normalizeRawStringList(requestData.propertyNames);
+	const sourceInfo: Record<string, unknown> = {};
+
+	if (instance.IsA("LuaSourceContainer")) {
+		const source = readScriptSource(instance);
+		const [lines] = Utils.splitLines(source);
+		sourceInfo.hasSource = true;
+		sourceInfo.sourceLength = source.size();
+		sourceInfo.lineCount = lines.size();
+		if (instance.IsA("BaseScript")) sourceInfo.enabled = instance.Enabled;
+	}
+
+	const properties: Record<string, unknown> = {};
+	for (const propertyName of propertyNames) {
+		if (propertyName.lower() === "source" && instance.IsA("LuaSourceContainer")) {
+			properties[propertyName] = {
+				omitted: true,
+				reason: "Source is intentionally omitted from get_instance_summary. Use read_script_slice for targeted reads.",
+				sourceLength: sourceInfo.sourceLength,
+				lineCount: sourceInfo.lineCount,
+			};
+			continue;
+		}
+
+		const [ok, value] = pcall(() => (instance as unknown as Record<string, unknown>)[propertyName]);
+		if (ok) properties[propertyName] = compactValue(value);
+	}
+
+	const children: Record<string, unknown>[] = [];
+	if (includeChildren) {
+		let emittedChildren = 0;
+		for (const child of instance.GetChildren()) {
+			if (emittedChildren >= maxChildren) break;
+			children.push({
+				name: child.Name,
+				className: child.ClassName,
+				path: getInstancePath(child),
+				childCount: child.GetChildren().size(),
+				hasSource: child.IsA("LuaSourceContainer"),
+			});
+			emittedChildren++;
+		}
+	}
+
+	const childrenTruncated = includeChildren ? instance.GetChildren().size() > maxChildren : undefined;
+	const summary = {
+		instancePath,
+		name: instance.Name,
+		className: instance.ClassName,
+		parent: instance.Parent ? getInstancePath(instance.Parent) : undefined,
+		childCount: instance.GetChildren().size(),
+		...sourceInfo,
+		properties,
+		children: includeChildren ? children : undefined,
+		childrenTruncated,
+	};
+
+	const propertyLines: string[] = [];
+	for (const [propertyName, value] of pairs(properties)) {
+		propertyLines.push(`${propertyName}=${compactValueForText(value)}`);
+	}
+
+	const childLines: string[] = [];
+	for (const child of children) {
+		childLines.push(`${child.path} | ${child.className} | children=${child.childCount} | hasSource=${child.hasSource}`);
+	}
+
+	return {
+		format: "compact",
+		text: [
+			`instance_summary path=${instancePath} class=${instance.ClassName} name=${instance.Name} children=${instance.GetChildren().size()} hasSource=${sourceInfo.hasSource ?? false}${sourceInfo.lineCount !== undefined ? ` lines=${sourceInfo.lineCount}` : ""}${sourceInfo.sourceLength !== undefined ? ` len=${sourceInfo.sourceLength}` : ""}`,
+			`parent=${instance.Parent ? getInstancePath(instance.Parent) : "-"}`,
+			`properties: ${propertyLines.size() > 0 ? propertyLines.join(" | ") : "-"}`,
+			includeChildren ? `children emitted=${children.size()} truncated=${childrenTruncated ?? false}` : "children: omitted",
+			...childLines,
+		].join("\n"),
+		...summary,
+	};
 }
 
 function getFileTree(requestData: Record<string, unknown>) {
@@ -820,6 +1521,11 @@ export = {
 	searchByProperty,
 	getClassInfo,
 	getProjectStructure,
+	getProjectMap,
+	findInstances,
+	findScripts,
+	findReferences,
+	getInstanceSummary,
 	grepScripts,
 	getDescendants,
 	compareInstances,
