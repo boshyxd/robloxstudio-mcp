@@ -1,7 +1,15 @@
 import State from "../modules/State";
 import UI from "../modules/UI";
 import Communication from "../modules/Communication";
+import Settings from "../modules/Settings";
 
+
+Settings.init(plugin);
+
+const savedPorts = Settings.getSavedPorts();
+if (savedPorts.size() > 0) {
+	State.loadConnections(savedPorts);
+}
 
 UI.init(plugin);
 const elements = UI.getElements();
@@ -33,3 +41,4 @@ plugin.Unloading.Connect(() => {
 
 UI.updateUIState();
 Communication.checkForUpdates();
+Communication.autoConnectOnStartup();

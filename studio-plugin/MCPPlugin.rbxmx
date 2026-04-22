@@ -9,6 +9,12 @@ local TS = require(script.include.RuntimeLib)
 local State = TS.import(script, script, "modules", "State")
 local UI = TS.import(script, script, "modules", "UI")
 local Communication = TS.import(script, script, "modules", "Communication")
+local Settings = TS.import(script, script, "modules", "Settings")
+Settings.init(plugin)
+local savedPorts = Settings.getSavedPorts()
+if #savedPorts > 0 then
+	State.loadConnections(savedPorts)
+end
 UI.init(plugin)
 local elements = UI.getElements()
 local toolbar = plugin:CreateToolbar("MCP Integration")
@@ -29,6 +35,7 @@ plugin.Unloading:Connect(function()
 end)
 UI.updateUIState()
 Communication.checkForUpdates()
+Communication.autoConnectOnStartup()
 ]]></string>
     </Properties>
     <Item class="Folder" referent="1">
@@ -46,6 +53,7 @@ local RunService = _services.RunService
 local State = TS.import(script, script.Parent, "State")
 local Utils = TS.import(script, script.Parent, "Utils")
 local UI = TS.import(script, script.Parent, "UI")
+local Settings = TS.import(script, script.Parent, "Settings")
 local QueryHandlers = TS.import(script, script.Parent, "handlers", "QueryHandlers")
 local PropertyHandlers = TS.import(script, script.Parent, "handlers", "PropertyHandlers")
 local InstanceHandlers = TS.import(script, script.Parent, "handlers", "InstanceHandlers")
@@ -83,9 +91,11 @@ local routeMap = {
 	["/api/compare-instances"] = QueryHandlers.compareInstances,
 	["/api/get-output-log"] = QueryHandlers.getOutputLog,
 	["/api/set-property"] = PropertyHandlers.setProperty,
+	["/api/set-properties"] = PropertyHandlers.setProperties,
 	["/api/mass-set-property"] = PropertyHandlers.massSetProperty,
 	["/api/mass-get-property"] = PropertyHandlers.massGetProperty,
 	["/api/create-object"] = InstanceHandlers.createObject,
+	["/api/create-ui-tree"] = InstanceHandlers.createUITree,
 	["/api/mass-create-objects"] = InstanceHandlers.massCreateObjects,
 	["/api/delete-object"] = InstanceHandlers.deleteObject,
 	["/api/smart-duplicate"] = InstanceHandlers.smartDuplicate,
@@ -350,6 +360,7 @@ local function activatePlugin(connIndex)
 		UI.updateUIState()
 	end
 	UI.updateTabDot(idx)
+	Settings.syncFromConnections(State.getConnections())
 	task.spawn(function()
 		if not conn.heartbeatConnection then
 			conn.heartbeatConnection = RunService.Heartbeat:Connect(function()
@@ -387,7 +398,7 @@ local function activatePlugin(connIndex)
 		end
 	end)
 end
-local function deactivatePlugin(connIndex)
+local function deactivatePlugin(connIndex, skipPersist)
 	local _condition = connIndex
 	if _condition == nil then
 		_condition = State.getActiveTabIndex()
@@ -403,6 +414,9 @@ local function deactivatePlugin(connIndex)
 		UI.updateUIState()
 	end
 	UI.updateTabDot(idx)
+	if not skipPersist then
+		Settings.syncFromConnections(State.getConnections())
+	end
 	pcall(function()
 		HttpService:RequestAsync({
 			Url = `{conn.serverUrl}/disconnect`,
@@ -426,7 +440,7 @@ end
 local function deactivateAll()
 	for i = 0, #State.getConnections() - 1 do
 		if State.getConnections()[i + 1].isActive then
-			deactivatePlugin(i)
+			deactivatePlugin(i, true)
 		end
 	end
 end
@@ -459,12 +473,27 @@ local function checkForUpdates()
 					local ui = UI.getElements()
 					ui.updateBannerText.Text = `v{latestVersion} available - github.com/boshyxd/robloxstudio-mcp`
 					ui.updateBanner.Visible = true
-					ui.contentFrame.Position = UDim2.new(0, 8, 0, 92)
-					ui.contentFrame.Size = UDim2.new(1, -16, 1, -100)
+					UI.layoutContentArea(true)
 				end
 			end
 		end
 	end)
+end
+local function autoConnectOnStartup()
+	if RunService:IsRunMode() then
+		return nil
+	end
+	if not Settings.getAutoConnect() then
+		return nil
+	end
+	local saved = Settings.getSavedPorts()
+	local connections = State.getConnections()
+	for i = 0, #connections - 1 do
+		local entry = saved[i + 1]
+		if entry and entry.wasActive then
+			activatePlugin(i)
+		end
+	end
 end
 return {
 	getConnectionStatus = getConnectionStatus,
@@ -472,6 +501,7 @@ return {
 	deactivatePlugin = deactivatePlugin,
 	deactivateAll = deactivateAll,
 	checkForUpdates = checkForUpdates,
+	autoConnectOnStartup = autoConnectOnStartup,
 }
 ]]></string>
         </Properties>
@@ -2181,6 +2211,101 @@ local function moveObject(requestData)
 		error = `Failed to move object: {result}`,
 	}
 end
+local function createUITree(requestData)
+	local tree = requestData.tree
+	local parentPath = requestData.parentPath
+	if not tree or not (parentPath ~= "" and parentPath) then
+		return {
+			error = "Tree object and parentPath are required",
+		}
+	end
+	local parent = getInstanceByPath(parentPath)
+	if not parent then
+		return {
+			error = `Parent not found: {parentPath}`,
+		}
+	end
+	local _value = tree.className
+	local _condition = not (_value ~= 0 and _value == _value and _value ~= "" and _value)
+	if not _condition then
+		local _className = tree.className
+		_condition = not (type(_className) == "string")
+	end
+	if _condition then
+		return {
+			error = "Tree root must have a className string",
+		}
+	end
+	local MAX_DEPTH = 20
+	local recordingId = beginRecording("Create UI tree")
+	local totalCreated = 0
+	local totalFailed = 0
+	local errors = {}
+	local function createNode(nodeData, nodeParent, depth)
+		if depth > MAX_DEPTH then
+			totalFailed += 1
+			local _arg0 = `Max depth ({MAX_DEPTH}) exceeded`
+			table.insert(errors, _arg0)
+			return nil
+		end
+		local className = nodeData.className
+		if not (className ~= "" and className) then
+			totalFailed += 1
+			table.insert(errors, "Node missing className")
+			return nil
+		end
+		local success, instance = pcall(function()
+			local inst = Instance.new(className)
+			local _value_1 = nodeData.name
+			if _value_1 ~= 0 and _value_1 == _value_1 and _value_1 ~= "" and _value_1 then
+				inst.Name = nodeData.name
+			end
+			local props = nodeData.properties
+			if props and type(props) == "table" then
+				for propName, propValue in pairs(props) do
+					pcall(function()
+						local converted = convertPropertyValue(inst, propName, propValue)
+						inst[propName] = if converted ~= nil then converted else propValue
+					end)
+				end
+			end
+			inst.Parent = nodeParent
+			return inst
+		end)
+		if not success or not instance then
+			totalFailed += 1
+			local _arg0 = `Failed to create {className}: {tostring(instance)}`
+			table.insert(errors, _arg0)
+			return nil
+		end
+		totalCreated += 1
+		local children = nodeData.children
+		if children and type(children) == "table" then
+			for _, childData in children do
+				if type(childData) == "table" then
+					createNode(childData, instance, depth + 1)
+				end
+			end
+		end
+		return instance
+	end
+	local rootInstance = createNode(tree, parent, 0)
+	finishRecording(recordingId, totalCreated > 0)
+	if not rootInstance then
+		return {
+			error = `Failed to create root node ({tree.className})`,
+			totalCreated = totalCreated,
+			totalFailed = totalFailed,
+			errors = errors,
+		}
+	end
+	return {
+		totalCreated = totalCreated,
+		totalFailed = totalFailed,
+		rootPath = getInstancePath(rootInstance),
+		errors = if #errors > 0 then errors else nil,
+	}
+end
 return {
 	createObject = createObject,
 	deleteObject = deleteObject,
@@ -2189,6 +2314,7 @@ return {
 	massDuplicate = massDuplicate,
 	cloneObject = cloneObject,
 	moveObject = moveObject,
+	createUITree = createUITree,
 }
 ]]></string>
           </Properties>
@@ -2984,10 +3110,77 @@ local function massGetProperty(requestData)
 		propertyName = propertyName,
 	}
 end
+local function setProperties(requestData)
+	local instancePath = requestData.instancePath
+	local properties = requestData.properties
+	if not (instancePath ~= "" and instancePath) or not properties or not (type(properties) == "table") then
+		return {
+			error = "Instance path and properties object are required",
+		}
+	end
+	local instance = getInstanceByPath(instancePath)
+	if not instance then
+		return {
+			error = `Instance not found: {instancePath}`,
+		}
+	end
+	local recordingId = beginRecording("Set multiple properties")
+	local inst = instance
+	local results = {}
+	local successCount = 0
+	local failureCount = 0
+	for propName, propValue in pairs(properties) do
+		local success, err = pcall(function()
+			if propName == "Parent" or propName == "PrimaryPart" then
+				if type(propValue) == "string" then
+					local refInstance = getInstanceByPath(propValue)
+					if not refInstance then
+						error(`{propName} reference not found: {propValue}`)
+					end
+					inst[propName] = refInstance
+				end
+			elseif propName == "Name" then
+				instance.Name = tostring(propValue)
+			elseif propName == "Source" and instance:IsA("LuaSourceContainer") then
+				instance.Source = tostring(propValue)
+			else
+				local converted = convertPropertyValue(instance, propName, propValue)
+				inst[propName] = if converted ~= nil then converted else propValue
+			end
+		end)
+		if success then
+			successCount += 1
+			local _arg0 = {
+				property = propName,
+				success = true,
+			}
+			table.insert(results, _arg0)
+		else
+			failureCount += 1
+			local _arg0 = {
+				property = propName,
+				success = false,
+				error = tostring(err),
+			}
+			table.insert(results, _arg0)
+		end
+	end
+	finishRecording(recordingId, successCount > 0)
+	return {
+		instancePath = instancePath,
+		summary = {
+			total = successCount + failureCount,
+			succeeded = successCount,
+			failed = failureCount,
+		},
+		results = results,
+	}
+end
 return {
 	setProperty = setProperty,
 	massSetProperty = massSetProperty,
 	massGetProperty = massGetProperty,
+	setProperties = setProperties,
 }
 ]]></string>
           </Properties>
@@ -4164,6 +4357,11 @@ local function getScriptSource(requestData)
 		if instance:IsA("BaseScript") then
 			resp.enabled = instance.Enabled
 		end
+		local topServiceInst = instance
+		while topServiceInst.Parent and topServiceInst.Parent ~= game do
+			topServiceInst = topServiceInst.Parent
+		end
+		resp.topService = topServiceInst.Name
 		return resp
 	end)
 	if success then
@@ -5101,9 +5299,112 @@ return {
       </Item>
       <Item class="ModuleScript" referent="15">
         <Properties>
+          <string name="Name">Settings</string>
+          <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
+local SETTINGS_KEY = "MCPPluginSettings_v1"
+local function defaults()
+	return {
+		autoConnectOnLoad = false,
+		savedPorts = {},
+	}
+end
+local pluginRef
+local cached = defaults()
+local function sanitize(raw)
+	local data = defaults()
+	local _condition = not (raw ~= 0 and raw == raw and raw ~= "" and raw)
+	if not _condition then
+		local _raw = raw
+		_condition = not (type(_raw) == "table")
+	end
+	if _condition then
+		return data
+	end
+	local tbl = raw
+	if tbl.autoConnectOnLoad == true then
+		data.autoConnectOnLoad = true
+	end
+	local _savedPorts = tbl.savedPorts
+	if type(_savedPorts) == "table" then
+		local arr = tbl.savedPorts
+		for _, entry in arr do
+			if not (entry ~= 0 and entry == entry and entry ~= "" and entry) or not (type(entry) == "table") then
+				continue
+			end
+			local p = entry
+			local _port = p.port
+			if not (type(_port) == "number") then
+				continue
+			end
+			local _serverUrl = p.serverUrl
+			if not (type(_serverUrl) == "string") then
+				continue
+			end
+			local _savedPorts_1 = data.savedPorts
+			local _arg0 = {
+				port = p.port,
+				serverUrl = p.serverUrl,
+				wasActive = p.wasActive == true,
+			}
+			table.insert(_savedPorts_1, _arg0)
+		end
+	end
+	return data
+end
+local function persist()
+	if not pluginRef then
+		return nil
+	end
+	local p = pluginRef
+	pcall(function()
+		return p:SetSetting(SETTINGS_KEY, cached)
+	end)
+end
+local function init(p)
+	pluginRef = p
+	local ok, raw = pcall(function()
+		return p:GetSetting(SETTINGS_KEY)
+	end)
+	cached = if ok then sanitize(raw) else defaults()
+end
+local function getAutoConnect()
+	return cached.autoConnectOnLoad
+end
+local function setAutoConnect(value)
+	cached.autoConnectOnLoad = value
+	persist()
+end
+local function getSavedPorts()
+	return cached.savedPorts
+end
+local function syncFromConnections(connections)
+	local ports = {}
+	for _, c in connections do
+		local _arg0 = {
+			port = c.port,
+			serverUrl = c.serverUrl,
+			wasActive = c.isActive,
+		}
+		table.insert(ports, _arg0)
+	end
+	cached.savedPorts = ports
+	persist()
+end
+return {
+	init = init,
+	getAutoConnect = getAutoConnect,
+	setAutoConnect = setAutoConnect,
+	getSavedPorts = getSavedPorts,
+	syncFromConnections = syncFromConnections,
+}
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="16">
+        <Properties>
           <string name="Name">State</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
-local CURRENT_VERSION = "2.6.0-next.8"
+local CURRENT_VERSION = "2.6.0"
 local MAX_CONNECTIONS = 5
 local BASE_PORT = 58741
 local activeTabIndex = 0
@@ -5179,6 +5480,22 @@ end
 local function getConnections()
 	return connections
 end
+local function loadConnections(list)
+	table.clear(connections)
+	for _, item in list do
+		if #connections >= MAX_CONNECTIONS then
+			break
+		end
+		local conn = createConnection(item.port)
+		conn.serverUrl = item.serverUrl
+		table.insert(connections, conn)
+	end
+	if #connections == 0 then
+		local _arg0 = createConnection(BASE_PORT)
+		table.insert(connections, _arg0)
+	end
+	activeTabIndex = 0
+end
 return {
 	CURRENT_VERSION = CURRENT_VERSION,
 	MAX_CONNECTIONS = MAX_CONNECTIONS,
@@ -5191,17 +5508,24 @@ return {
 	getActiveTabIndex = getActiveTabIndex,
 	setActiveTabIndex = setActiveTabIndex,
 	getConnections = getConnections,
+	loadConnections = loadConnections,
 }
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">UI</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
 local TS = require(script.Parent.Parent.include.RuntimeLib)
 local TweenService = TS.import(script, script.Parent.Parent, "node_modules", "@rbxts", "services").TweenService
 local State = TS.import(script, script.Parent, "State")
+local Settings = TS.import(script, script.Parent, "Settings")
+local urlChangeHandler
+local function setUrlChangeHandler(handler)
+	urlChangeHandler = handler
+end
+local inSettingsView = false
 local elements = nil
 local pulseAnimation
 local buttonHover = false
@@ -5326,6 +5650,7 @@ local function createTabButton(connIndex)
 			return nil
 		end
 		State.removeConnection(connIndex)
+		Settings.syncFromConnections(State.getConnections())
 		refreshTabBar()
 		switchToTab(State.getActiveTabIndex())
 	end)
@@ -5415,6 +5740,7 @@ local function updateTabLabel(connIndex)
 		tb.label.Text = tostring(conn.port)
 	end
 end
+local buildSettingsPanel, setSettingsView
 local function init(pluginRef)
 	local CURRENT_VERSION = State.CURRENT_VERSION
 	local screenGui = pluginRef:CreateDockWidgetPluginGuiAsync("MCPServerInterface", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 300, 260, 260, 200))
@@ -5436,7 +5762,7 @@ local function init(pluginRef)
 	headerLine.BorderSizePixel = 0
 	headerLine.Parent = header
 	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -50, 0, 22)
+	titleLabel.Size = UDim2.new(1, -80, 0, 22)
 	titleLabel.Position = UDim2.new(0, 10, 0, 2)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.RichText = true
@@ -5459,9 +5785,38 @@ local function init(pluginRef)
 	creditsLabel.Parent = header
 	local statusContainer = Instance.new("Frame")
 	statusContainer.Size = UDim2.new(0, 20, 0, 22)
-	statusContainer.Position = UDim2.new(1, -26, 0, 2)
+	statusContainer.Position = UDim2.new(1, -52, 0, 2)
 	statusContainer.BackgroundTransparency = 1
 	statusContainer.Parent = header
+	local cogButton = Instance.new("TextButton")
+	cogButton.Size = UDim2.new(0, 18, 0, 18)
+	cogButton.Position = UDim2.new(1, -24, 0, 4)
+	cogButton.BackgroundColor3 = C.surface
+	cogButton.BackgroundTransparency = 0.5
+	cogButton.BorderSizePixel = 0
+	cogButton.AutoButtonColor = false
+	cogButton.Text = utf8.char(0x2699)
+	cogButton.TextColor3 = C.muted
+	cogButton.TextSize = 13
+	cogButton.Font = Enum.Font.SourceSansBold
+	cogButton.Parent = header
+	local cogCorner = Instance.new("UICorner")
+	cogCorner.CornerRadius = UDim.new(0, 3)
+	cogCorner.Parent = cogButton
+	cogButton.MouseEnter:Connect(function()
+		tweenProp(cogButton, {
+			BackgroundTransparency = 0,
+			BackgroundColor3 = C.subtle,
+			TextColor3 = C.white,
+		})
+	end)
+	cogButton.MouseLeave:Connect(function()
+		tweenProp(cogButton, {
+			BackgroundTransparency = if inSettingsView then 0 else 0.5,
+			BackgroundColor3 = if inSettingsView then C.subtle else C.surface,
+			TextColor3 = if inSettingsView then C.white else C.muted,
+		})
+	end)
 	local statusIndicator = Instance.new("Frame")
 	statusIndicator.Size = UDim2.new(0, 8, 0, 8)
 	statusIndicator.Position = UDim2.new(0.5, -4, 0.5, -4)
@@ -5535,6 +5890,7 @@ local function init(pluginRef)
 	addTabBtn.Activated:Connect(function()
 		local newIndex = State.addConnection()
 		if newIndex ~= nil then
+			Settings.syncFromConnections(State.getConnections())
 			refreshTabBar()
 			switchToTab(newIndex)
 		end
@@ -5625,6 +5981,9 @@ local function init(pluginRef)
 			conn.port = _condition
 		end
 		updateTabLabel(State.getActiveTabIndex())
+		if urlChangeHandler then
+			urlChangeHandler(State.getActiveTabIndex(), conn.serverUrl)
+		end
 	end)
 	local statusRow = Instance.new("Frame")
 	statusRow.Size = UDim2.new(1, 0, 0, 14)
@@ -5757,6 +6116,10 @@ local function init(pluginRef)
 			setButtonConnect(connectButton, connectStroke)
 		end
 	end)
+	local settingsPanel = buildSettingsPanel(mainFrame, contentFrame)
+	cogButton.Activated:Connect(function()
+		return setSettingsView(not inSettingsView)
+	end)
 	elements = {
 		screenGui = screenGui,
 		mainFrame = mainFrame,
@@ -5779,8 +6142,140 @@ local function init(pluginRef)
 		updateBanner = updateBanner,
 		updateBannerText = updateBannerText,
 		tabBar = tabBar,
+		cogButton = cogButton,
+		settingsPanel = settingsPanel,
 	}
 	refreshTabBar()
+	local activeConn = State.getActiveConnection()
+	if activeConn then
+		urlInput.Text = activeConn.serverUrl
+	end
+end
+local addToggleRow
+function buildSettingsPanel(mainFrame, contentFrame)
+	local panel = Instance.new("Frame")
+	panel.Size = contentFrame.Size
+	panel.Position = contentFrame.Position
+	panel.BackgroundTransparency = 1
+	panel.BorderSizePixel = 0
+	panel.Visible = false
+	panel.Parent = mainFrame
+	local card = Instance.new("Frame")
+	card.Size = UDim2.new(1, 0, 0, 0)
+	card.AutomaticSize = Enum.AutomaticSize.Y
+	card.BackgroundColor3 = C.card
+	card.BorderSizePixel = 0
+	card.Parent = panel
+	local cardCorner = Instance.new("UICorner")
+	cardCorner.CornerRadius = CORNER
+	cardCorner.Parent = card
+	local cardPadding = Instance.new("UIPadding")
+	cardPadding.PaddingLeft = UDim.new(0, 10)
+	cardPadding.PaddingRight = UDim.new(0, 10)
+	cardPadding.PaddingTop = UDim.new(0, 8)
+	cardPadding.PaddingBottom = UDim.new(0, 10)
+	cardPadding.Parent = card
+	local cardLayout = Instance.new("UIListLayout")
+	cardLayout.Padding = UDim.new(0, 8)
+	cardLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	cardLayout.Parent = card
+	local header = Instance.new("TextLabel")
+	header.Size = UDim2.new(1, 0, 0, 16)
+	header.BackgroundTransparency = 1
+	header.Text = "Settings"
+	header.TextColor3 = C.white
+	header.TextSize = 11
+	header.Font = Enum.Font.GothamBold
+	header.TextXAlignment = Enum.TextXAlignment.Left
+	header.LayoutOrder = 1
+	header.Parent = card
+	addToggleRow(card, 2, "Auto-connect on load", "Reconnect active tabs when the plugin loads", Settings.getAutoConnect(), function(on)
+		Settings.setAutoConnect(on)
+	end)
+	return panel
+end
+function addToggleRow(parent, order, title, subtitle, initial, onChange)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 30)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = order
+	row.Parent = parent
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Size = UDim2.new(1, -40, 0, 14)
+	titleLbl.Position = UDim2.new(0, 0, 0, 0)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Text = title
+	titleLbl.TextColor3 = C.label
+	titleLbl.TextSize = 10
+	titleLbl.Font = Enum.Font.GothamMedium
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.Parent = row
+	local subLbl = Instance.new("TextLabel")
+	subLbl.Size = UDim2.new(1, -40, 0, 12)
+	subLbl.Position = UDim2.new(0, 0, 0, 14)
+	subLbl.BackgroundTransparency = 1
+	subLbl.Text = subtitle
+	subLbl.TextColor3 = C.muted
+	subLbl.TextSize = 9
+	subLbl.Font = Enum.Font.GothamMedium
+	subLbl.TextXAlignment = Enum.TextXAlignment.Left
+	subLbl.Parent = row
+	local toggle = Instance.new("TextButton")
+	toggle.AnchorPoint = Vector2.new(1, 0.5)
+	toggle.Position = UDim2.new(1, 0, 0.5, 0)
+	toggle.Size = UDim2.new(0, 28, 0, 14)
+	toggle.BackgroundColor3 = if initial then C.green else C.subtle
+	toggle.AutoButtonColor = false
+	toggle.BorderSizePixel = 0
+	toggle.Text = ""
+	toggle.Parent = row
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(1, 0)
+	toggleCorner.Parent = toggle
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.new(0, 10, 0, 10)
+	knob.Position = if initial then UDim2.new(1, -12, 0.5, -5) else UDim2.new(0, 2, 0.5, -5)
+	knob.BackgroundColor3 = C.white
+	knob.BorderSizePixel = 0
+	knob.Parent = toggle
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(1, 0)
+	knobCorner.Parent = knob
+	local state = initial
+	toggle.Activated:Connect(function()
+		state = not state
+		tweenProp(toggle, {
+			BackgroundColor3 = if state then C.green else C.subtle,
+		})
+		tweenProp(knob, {
+			Position = if state then UDim2.new(1, -12, 0.5, -5) else UDim2.new(0, 2, 0.5, -5),
+		})
+		onChange(state)
+	end)
+end
+function setSettingsView(show)
+	if not elements then
+		return nil
+	end
+	inSettingsView = show
+	elements.contentFrame.Visible = not show
+	elements.settingsPanel.Visible = show
+	tweenProp(elements.cogButton, {
+		BackgroundTransparency = if show then 0 else 0.5,
+		BackgroundColor3 = if show then C.subtle else C.surface,
+		TextColor3 = if show then C.white else C.muted,
+	})
+end
+local function layoutContentArea(withBanner)
+	if not elements then
+		return nil
+	end
+	local position = if withBanner then UDim2.new(0, 8, 0, 92) else UDim2.new(0, 8, 0, 66)
+	local size = if withBanner then UDim2.new(1, -16, 1, -100) else UDim2.new(1, -16, 1, -74)
+	elements.contentFrame.Position = position
+	elements.contentFrame.Size = size
+	elements.settingsPanel.Position = position
+	elements.settingsPanel.Size = size
 end
 function updateUIState()
 	local conn = State.getActiveConnection()
@@ -5911,11 +6406,14 @@ return {
 	getElements = function()
 		return elements
 	end,
+	setUrlChangeHandler = setUrlChangeHandler,
+	setSettingsView = setSettingsView,
+	layoutContentArea = layoutContentArea,
 }
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">Utils</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
@@ -6445,11 +6943,11 @@ return {
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="21">
+    <Item class="Folder" referent="22">
       <Properties>
         <string name="Name">include</string>
       </Properties>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">Promise</string>
           <string name="Source"><![CDATA[--[[
@@ -8523,7 +9021,7 @@ return Promise
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">RuntimeLib</string>
           <string name="Source"><![CDATA[local Promise = require(script.Parent.Promise)
@@ -8790,15 +9288,15 @@ return TS
         </Properties>
       </Item>
     </Item>
-    <Item class="Folder" referent="22">
+    <Item class="Folder" referent="23">
       <Properties>
         <string name="Name">node_modules</string>
       </Properties>
-      <Item class="Folder" referent="23">
+      <Item class="Folder" referent="24">
         <Properties>
           <string name="Name">@rbxts</string>
         </Properties>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">services</string>
           <string name="Source"><![CDATA[return setmetatable({}, {

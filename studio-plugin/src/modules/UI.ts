@@ -1,5 +1,6 @@
 import { TweenService } from "@rbxts/services";
 import State from "./State";
+import Settings from "./Settings";
 import { Connection } from "../types";
 
 interface UIElements {
@@ -24,7 +25,18 @@ interface UIElements {
 	updateBanner: Frame;
 	updateBannerText: TextLabel;
 	tabBar: Frame;
+	cogButton: TextButton;
+	cogStroke: UIStroke;
+	settingsPanel: Frame;
 }
+
+type UrlChangeHandler = (connIndex: number, serverUrl: string) => void;
+let urlChangeHandler: UrlChangeHandler | undefined;
+function setUrlChangeHandler(handler: UrlChangeHandler) {
+	urlChangeHandler = handler;
+}
+
+let inSettingsView = false;
 
 let elements: UIElements = undefined!;
 let pulseAnimation: Tween | undefined;
@@ -163,6 +175,7 @@ function createTabButton(connIndex: number) {
 		if (c && c.isActive) return;
 		if (State.getConnections().size() <= 1) return;
 		State.removeConnection(connIndex);
+		Settings.syncFromConnections(State.getConnections());
 		refreshTabBar();
 		switchToTab(State.getActiveTabIndex());
 	});
@@ -250,7 +263,7 @@ function init(pluginRef: Plugin) {
 	headerLine.Parent = header;
 
 	const titleLabel = new Instance("TextLabel");
-	titleLabel.Size = new UDim2(1, -50, 0, 22);
+	titleLabel.Size = new UDim2(1, -80, 0, 22);
 	titleLabel.Position = new UDim2(0, 10, 0, 2);
 	titleLabel.BackgroundTransparency = 1;
 	titleLabel.RichText = true;
@@ -275,9 +288,46 @@ function init(pluginRef: Plugin) {
 
 	const statusContainer = new Instance("Frame");
 	statusContainer.Size = new UDim2(0, 20, 0, 22);
-	statusContainer.Position = new UDim2(1, -26, 0, 2);
+	statusContainer.Position = new UDim2(1, -52, 0, 2);
 	statusContainer.BackgroundTransparency = 1;
 	statusContainer.Parent = header;
+
+	const cogButton = new Instance("TextButton");
+	cogButton.Size = new UDim2(0, 18, 0, 18);
+	cogButton.Position = new UDim2(1, -24, 0, 4);
+	cogButton.BackgroundColor3 = C.surface;
+	cogButton.BackgroundTransparency = 0;
+	cogButton.BorderSizePixel = 0;
+	cogButton.AutoButtonColor = false;
+	cogButton.Text = utf8.char(0x2699);
+	cogButton.TextColor3 = C.white;
+	cogButton.TextSize = 13;
+	cogButton.Font = Enum.Font.SourceSansBold;
+	cogButton.Parent = header;
+
+	const cogCorner = new Instance("UICorner");
+	cogCorner.CornerRadius = new UDim(0, 3);
+	cogCorner.Parent = cogButton;
+
+	const cogStroke = new Instance("UIStroke");
+	cogStroke.Color = C.subtle;
+	cogStroke.Thickness = 1;
+	cogStroke.Parent = cogButton;
+
+	cogButton.MouseEnter.Connect(() => {
+		tweenProp(cogButton, {
+			BackgroundColor3: C.subtle,
+			TextColor3: C.white,
+		});
+		tweenProp(cogStroke, { Color: C.muted });
+	});
+	cogButton.MouseLeave.Connect(() => {
+		tweenProp(cogButton, {
+			BackgroundColor3: inSettingsView ? C.subtle : C.surface,
+			TextColor3: C.white,
+		});
+		tweenProp(cogStroke, { Color: inSettingsView ? C.muted : C.subtle });
+	});
 
 	const statusIndicator = new Instance("Frame");
 	statusIndicator.Size = new UDim2(0, 8, 0, 8);
@@ -352,6 +402,7 @@ function init(pluginRef: Plugin) {
 	addTabBtn.Activated.Connect(() => {
 		const newIndex = State.addConnection();
 		if (newIndex !== undefined) {
+			Settings.syncFromConnections(State.getConnections());
 			refreshTabBar();
 			switchToTab(newIndex);
 		}
@@ -446,6 +497,7 @@ function init(pluginRef: Plugin) {
 		const [portStr] = conn.serverUrl.match(":(%d+)$");
 		if (portStr) conn.port = tonumber(portStr) ?? conn.port;
 		updateTabLabel(State.getActiveTabIndex());
+		if (urlChangeHandler) urlChangeHandler(State.getActiveTabIndex(), conn.serverUrl);
 	});
 
 	const statusRow = new Instance("Frame");
@@ -582,15 +634,166 @@ function init(pluginRef: Plugin) {
 		}
 	});
 
+	const settingsPanel = buildSettingsPanel(mainFrame, contentFrame);
+
+	cogButton.Activated.Connect(() => setSettingsView(!inSettingsView));
 
 	elements = {
 		screenGui, mainFrame, contentFrame, statusLabel, detailStatusLabel,
 		statusIndicator, statusPulse, statusText, connectButton, connectStroke,
 		urlInput, step1Dot, step1Label, step2Dot, step2Label, step3Dot, step3Label,
 		troubleshootLabel, updateBanner, updateBannerText, tabBar,
+		cogButton, cogStroke, settingsPanel,
 	};
 
 	refreshTabBar();
+	const activeConn = State.getActiveConnection();
+	if (activeConn) urlInput.Text = activeConn.serverUrl;
+}
+
+function buildSettingsPanel(mainFrame: Frame, contentFrame: ScrollingFrame): Frame {
+	const panel = new Instance("Frame");
+	panel.Size = contentFrame.Size;
+	panel.Position = contentFrame.Position;
+	panel.BackgroundTransparency = 1;
+	panel.BorderSizePixel = 0;
+	panel.Visible = false;
+	panel.Parent = mainFrame;
+
+	const card = new Instance("Frame");
+	card.Size = new UDim2(1, 0, 0, 0);
+	card.AutomaticSize = Enum.AutomaticSize.Y;
+	card.BackgroundColor3 = C.card;
+	card.BorderSizePixel = 0;
+	card.Parent = panel;
+
+	const cardCorner = new Instance("UICorner");
+	cardCorner.CornerRadius = CORNER;
+	cardCorner.Parent = card;
+
+	const cardPadding = new Instance("UIPadding");
+	cardPadding.PaddingLeft = new UDim(0, 10);
+	cardPadding.PaddingRight = new UDim(0, 10);
+	cardPadding.PaddingTop = new UDim(0, 8);
+	cardPadding.PaddingBottom = new UDim(0, 10);
+	cardPadding.Parent = card;
+
+	const cardLayout = new Instance("UIListLayout");
+	cardLayout.Padding = new UDim(0, 8);
+	cardLayout.SortOrder = Enum.SortOrder.LayoutOrder;
+	cardLayout.Parent = card;
+
+	const header = new Instance("TextLabel");
+	header.Size = new UDim2(1, 0, 0, 16);
+	header.BackgroundTransparency = 1;
+	header.Text = "Settings";
+	header.TextColor3 = C.white;
+	header.TextSize = 11;
+	header.Font = Enum.Font.GothamBold;
+	header.TextXAlignment = Enum.TextXAlignment.Left;
+	header.LayoutOrder = 1;
+	header.Parent = card;
+
+	addToggleRow(card, 2, "Auto-connect on load", "Reconnect active tabs when the plugin loads", Settings.getAutoConnect(), (on) => {
+		Settings.setAutoConnect(on);
+	});
+
+	return panel;
+}
+
+function addToggleRow(
+	parent: Instance,
+	order: number,
+	title: string,
+	subtitle: string,
+	initial: boolean,
+	onChange: (on: boolean) => void,
+) {
+	const row = new Instance("Frame");
+	row.Size = new UDim2(1, 0, 0, 30);
+	row.BackgroundTransparency = 1;
+	row.LayoutOrder = order;
+	row.Parent = parent;
+
+	const titleLbl = new Instance("TextLabel");
+	titleLbl.Size = new UDim2(1, -40, 0, 14);
+	titleLbl.Position = new UDim2(0, 0, 0, 0);
+	titleLbl.BackgroundTransparency = 1;
+	titleLbl.Text = title;
+	titleLbl.TextColor3 = C.label;
+	titleLbl.TextSize = 10;
+	titleLbl.Font = Enum.Font.GothamMedium;
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left;
+	titleLbl.Parent = row;
+
+	const subLbl = new Instance("TextLabel");
+	subLbl.Size = new UDim2(1, -40, 0, 12);
+	subLbl.Position = new UDim2(0, 0, 0, 14);
+	subLbl.BackgroundTransparency = 1;
+	subLbl.Text = subtitle;
+	subLbl.TextColor3 = C.muted;
+	subLbl.TextSize = 9;
+	subLbl.Font = Enum.Font.GothamMedium;
+	subLbl.TextXAlignment = Enum.TextXAlignment.Left;
+	subLbl.Parent = row;
+
+	const toggle = new Instance("TextButton");
+	toggle.AnchorPoint = new Vector2(1, 0.5);
+	toggle.Position = new UDim2(1, 0, 0.5, 0);
+	toggle.Size = new UDim2(0, 28, 0, 14);
+	toggle.BackgroundColor3 = initial ? C.green : C.subtle;
+	toggle.AutoButtonColor = false;
+	toggle.BorderSizePixel = 0;
+	toggle.Text = "";
+	toggle.Parent = row;
+
+	const toggleCorner = new Instance("UICorner");
+	toggleCorner.CornerRadius = new UDim(1, 0);
+	toggleCorner.Parent = toggle;
+
+	const knob = new Instance("Frame");
+	knob.Size = new UDim2(0, 10, 0, 10);
+	knob.Position = initial ? new UDim2(1, -12, 0.5, -5) : new UDim2(0, 2, 0.5, -5);
+	knob.BackgroundColor3 = C.white;
+	knob.BorderSizePixel = 0;
+	knob.Parent = toggle;
+
+	const knobCorner = new Instance("UICorner");
+	knobCorner.CornerRadius = new UDim(1, 0);
+	knobCorner.Parent = knob;
+
+	let state = initial;
+	toggle.Activated.Connect(() => {
+		state = !state;
+		tweenProp(toggle, { BackgroundColor3: state ? C.green : C.subtle });
+		tweenProp(knob, { Position: state ? new UDim2(1, -12, 0.5, -5) : new UDim2(0, 2, 0.5, -5) });
+		onChange(state);
+	});
+}
+
+function setSettingsView(show: boolean) {
+	if (!elements) return;
+	inSettingsView = show;
+	elements.contentFrame.Visible = !show;
+	elements.settingsPanel.Visible = show;
+	tweenProp(elements.cogButton, {
+		BackgroundTransparency: 0,
+		BackgroundColor3: show ? C.subtle : C.surface,
+		TextColor3: C.white,
+	});
+	tweenProp(elements.cogStroke, {
+		Color: show ? C.muted : C.subtle,
+	});
+}
+
+function layoutContentArea(withBanner: boolean) {
+	if (!elements) return;
+	const position = withBanner ? new UDim2(0, 8, 0, 92) : new UDim2(0, 8, 0, 66);
+	const size = withBanner ? new UDim2(1, -16, 1, -100) : new UDim2(1, -16, 1, -74);
+	elements.contentFrame.Position = position;
+	elements.contentFrame.Size = size;
+	elements.settingsPanel.Position = position;
+	elements.settingsPanel.Size = size;
 }
 
 function updateUIState() {
@@ -722,4 +925,7 @@ export = {
 	stopPulseAnimation,
 	startPulseAnimation,
 	getElements: () => elements,
+	setUrlChangeHandler,
+	setSettingsView,
+	layoutContentArea,
 };

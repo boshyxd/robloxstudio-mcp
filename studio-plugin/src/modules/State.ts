@@ -79,6 +79,20 @@ function getConnections(): Connection[] {
 	return connections;
 }
 
+function loadConnections(list: ReadonlyArray<{ port: number; serverUrl: string }>): void {
+	connections.clear();
+	for (const item of list) {
+		if (connections.size() >= MAX_CONNECTIONS) break;
+		const conn = createConnection(item.port);
+		conn.serverUrl = item.serverUrl;
+		connections.push(conn);
+	}
+	if (connections.size() === 0) {
+		connections.push(createConnection(BASE_PORT));
+	}
+	activeTabIndex = 0;
+}
+
 export = {
 	CURRENT_VERSION,
 	MAX_CONNECTIONS,
@@ -91,4 +105,5 @@ export = {
 	getActiveTabIndex,
 	setActiveTabIndex,
 	getConnections,
+	loadConnections,
 };

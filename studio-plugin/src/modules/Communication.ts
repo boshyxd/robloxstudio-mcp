@@ -2,6 +2,7 @@ import { HttpService, RunService } from "@rbxts/services";
 import State from "./State";
 import Utils from "./Utils";
 import UI from "./UI";
+import Settings from "./Settings";
 import QueryHandlers from "./handlers/QueryHandlers";
 import PropertyHandlers from "./handlers/PropertyHandlers";
 import InstanceHandlers from "./handlers/InstanceHandlers";
@@ -299,6 +300,7 @@ function activatePlugin(connIndex?: number) {
 		UI.updateUIState();
 	}
 	UI.updateTabDot(idx);
+	Settings.syncFromConnections(State.getConnections());
 
 	task.spawn(() => {
 		if (!conn.heartbeatConnection) {
@@ -329,7 +331,7 @@ function activatePlugin(connIndex?: number) {
 	});
 }
 
-function deactivatePlugin(connIndex?: number) {
+function deactivatePlugin(connIndex?: number, skipPersist?: boolean) {
 	const idx = connIndex ?? State.getActiveTabIndex();
 	const conn = State.getConnection(idx);
 	if (!conn) return;
@@ -339,6 +341,7 @@ function deactivatePlugin(connIndex?: number) {
 
 	if (idx === State.getActiveTabIndex()) UI.updateUIState();
 	UI.updateTabDot(idx);
+	if (!skipPersist) Settings.syncFromConnections(State.getConnections());
 
 	pcall(() => {
 		HttpService.RequestAsync({
@@ -361,7 +364,7 @@ function deactivatePlugin(connIndex?: number) {
 function deactivateAll() {
 	for (let i = 0; i < State.getConnections().size(); i++) {
 		if (State.getConnections()[i].isActive) {
-			deactivatePlugin(i);
+			deactivatePlugin(i, true);
 		}
 	}
 }
@@ -384,12 +387,24 @@ function checkForUpdates() {
 					const ui = UI.getElements();
 					ui.updateBannerText.Text = `v${latestVersion} available - github.com/boshyxd/robloxstudio-mcp`;
 					ui.updateBanner.Visible = true;
-					ui.contentFrame.Position = new UDim2(0, 8, 0, 92);
-					ui.contentFrame.Size = new UDim2(1, -16, 1, -100);
+					UI.layoutContentArea(true);
 				}
 			}
 		}
 	});
+}
+
+function autoConnectOnStartup() {
+	if (RunService.IsRunMode()) return;
+	if (!Settings.getAutoConnect()) return;
+	const saved = Settings.getSavedPorts();
+	const connections = State.getConnections();
+	for (let i = 0; i < connections.size(); i++) {
+		const entry = saved[i];
+		if (entry && entry.wasActive) {
+			activatePlugin(i);
+		}
+	}
 }
 
 export = {
@@ -398,4 +413,5 @@ export = {
 	deactivatePlugin,
 	deactivateAll,
 	checkForUpdates,
+	autoConnectOnStartup,
 };
