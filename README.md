@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/boshyxd-robloxstudio-mcp-badge.png)](https://mseep.ai/app/boshyxd-robloxstudio-mcp)
+
 # Roblox Studio MCP Server
 
 **Connect AI assistants like Claude and Gemini to Roblox Studio**
