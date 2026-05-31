@@ -13,6 +13,7 @@ interface PendingRequest {
   data: any;
   target: string;
   timestamp: number;
+  dispatchedAt?: number;
   resolve: (value: any) => void;
   reject: (error: any) => void;
   timeoutId: ReturnType<typeof setTimeout>;
@@ -25,6 +26,12 @@ export class BridgeService {
   private instances: Map<string, PluginInstance> = new Map();
   private nextClientIndex = 1;
   private requestTimeout = 30000;
+  // Once a request has been handed to a poller it is "in flight" and is not
+  // offered to other polls until this TTL elapses. The TTL lets a request that
+  // never got a response (dropped /response, plugin restart) be re-dispatched
+  // before it hits the full request timeout, while preventing the same request
+  // from being executed many times by successive fast polls.
+  private redispatchTimeout = 10000;
 
   registerInstance(instanceId: string, role: string): string {
     let assignedRole = role;
@@ -110,16 +117,23 @@ export class BridgeService {
 
   getPendingRequest(callerRole = 'edit'): { requestId: string; request: { endpoint: string; data: any } } | null {
 
+    const now = Date.now();
     let oldestRequest: PendingRequest | null = null;
 
     for (const request of this.pendingRequests.values()) {
       if (request.target !== callerRole) continue;
+      // Skip requests already handed to a poller, unless they have gone
+      // unanswered past the redispatch TTL.
+      if (request.dispatchedAt !== undefined && now - request.dispatchedAt < this.redispatchTimeout) {
+        continue;
+      }
       if (!oldestRequest || request.timestamp < oldestRequest.timestamp) {
         oldestRequest = request;
       }
     }
 
     if (oldestRequest) {
+      oldestRequest.dispatchedAt = now;
       return {
         requestId: oldestRequest.id,
         request: {

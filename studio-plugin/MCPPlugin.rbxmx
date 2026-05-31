@@ -138,19 +138,56 @@ local function processRequest(request)
 	end
 end
 local function sendResponse(conn, requestId, responseData)
-	pcall(function()
-		HttpService:RequestAsync({
-			Url = `{conn.serverUrl}/response`,
-			Method = "POST",
-			Headers = {
-				["Content-Type"] = "application/json",
-			},
-			Body = HttpService:JSONEncode({
-				requestId = requestId,
-				response = responseData,
-			}),
-		})
-	end)
+	local body = HttpService:JSONEncode({
+		requestId = requestId,
+		response = responseData,
+	})
+	local maxAttempts = 3
+	for attempt = 1, maxAttempts do
+		local ok, result = pcall(function()
+			return HttpService:RequestAsync({
+				Url = `{conn.serverUrl}/response`,
+				Method = "POST",
+				Headers = {
+					["Content-Type"] = "application/json",
+				},
+				Body = body,
+			})
+		end)
+		if ok and result.Success then
+			return nil
+		end
+		if attempt < maxAttempts then
+			task.wait(0.2 * attempt)
+		else
+			-- Don't let a dropped response vanish silently into a 30s server-side
+			-- timeout — make it visible in the Output window.
+			local reason = if ok then `HTTP {result.StatusCode}` else tostring(result)
+			warn(`[robloxstudio-mcp] failed to deliver response for request {requestId} after {maxAttempts} attempts: {reason}`)
+		end
+	end
+end
+-- Dedupe by requestId so a request the server re-dispatches (because a /response
+-- was lost or it crossed the redispatch TTL while still running) is never
+-- executed twice. While "processing" we ignore repeats; once "done" we re-send
+-- the cached response instead of re-running the handler.
+local handledRequests = {}
+local handledOrder = {}
+local MAX_HANDLED_REQUESTS = 128
+local function rememberHandledRequest(requestId, entry)
+	local _requestId = requestId
+	if not (handledRequests[_requestId] ~= nil) then
+		local _requestId_1 = requestId
+		table.insert(handledOrder, _requestId_1)
+		if #handledOrder > MAX_HANDLED_REQUESTS then
+			local oldest = handledOrder[1]
+			table.remove(handledOrder, 1)
+			handledRequests[oldest] = nil
+		end
+	end
+	local _requestId_1 = requestId
+	local _entry = entry
+	handledRequests[_requestId_1] = _entry
 end
 local function getConnectionStatus(connIndex)
 	local conn = State.getConnection(connIndex)
@@ -243,19 +280,45 @@ local function pollForRequests(connIndex)
 				UI.startPulseAnimation()
 			end
 		end
-		if data.request and mcpConnected then
-			task.spawn(function()
-				local ok, response = pcall(function()
-					return processRequest(data.request)
-				end)
-				if ok then
-					sendResponse(conn, data.requestId, response)
-				else
-					sendResponse(conn, data.requestId, {
-						error = tostring(response),
-					})
+		if data.request and mcpConnected and data.requestId ~= nil then
+			local requestId = data.requestId
+			local existing = handledRequests[requestId]
+			if existing then
+				-- Already seen this request id. If it finished, re-send the cached
+				-- result (the server only re-offers a request when it never got the
+				-- response). If it is still processing, the in-flight handler will
+				-- post the response — do nothing. Spawn so retry waits never block
+				-- the poll loop.
+				if existing.status == "done" then
+					task.spawn(function()
+						return sendResponse(conn, requestId, existing.response)
+					end)
 				end
-			end)
+			else
+				rememberHandledRequest(requestId, {
+					status = "processing",
+				})
+				task.spawn(function()
+					local ok, response = pcall(function()
+						return processRequest(data.request)
+					end)
+					local finalResponse = if ok then response else {
+						error = tostring(response),
+					}
+					rememberHandledRequest(requestId, {
+						status = "done",
+						response = finalResponse,
+					})
+					sendResponse(conn, requestId, finalResponse)
+				end)
+			end
+		end
+		-- Adaptive poll cadence: poll quickly while work is flowing, back off when
+		-- idle so steady-state HTTP volume stays well under Roblox's rate limit.
+		if data.request then
+			conn.currentPollInterval = conn.pollInterval
+		else
+			conn.currentPollInterval = math.min(conn.currentPollInterval * 1.5, conn.maxIdlePollInterval)
 		end
 	elseif conn.isActive then
 		conn.consecutiveFailures += 1
@@ -334,6 +397,7 @@ local function activatePlugin(connIndex)
 	conn.isActive = true
 	conn.consecutiveFailures = 0
 	conn.currentRetryDelay = 0.5
+	conn.currentPollInterval = conn.pollInterval
 	ui.screenGui.Enabled = true
 	if idx == State.getActiveTabIndex() then
 		conn.serverUrl = ui.urlInput.Text
@@ -353,7 +417,7 @@ local function activatePlugin(connIndex)
 		if not conn.heartbeatConnection then
 			conn.heartbeatConnection = RunService.Heartbeat:Connect(function()
 				local now = tick()
-				local currentInterval = if conn.consecutiveFailures > 5 then conn.currentRetryDelay else conn.pollInterval
+				local currentInterval = if conn.consecutiveFailures > 5 then conn.currentRetryDelay else conn.currentPollInterval
 				if now - conn.lastPoll > currentInterval then
 					conn.lastPoll = now
 					pollForRequests(idx)
@@ -3002,6 +3066,7 @@ local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
+local forEachDescendant = _binding.forEachDescendant
 local function getFileTree(requestData)
 	local _condition = (requestData.path)
 	if _condition == nil then
@@ -3060,7 +3125,7 @@ local function searchFiles(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3087,11 +3152,7 @@ local function searchFiles(requestData)
 			end
 			table.insert(results, entry)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3167,7 +3228,7 @@ local function searchObjects(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3198,11 +3259,7 @@ local function searchObjects(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3373,7 +3430,7 @@ local function searchByProperty(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local success, value = pcall(function()
 			return tostring(instance[propertyName])
 		end)
@@ -3392,11 +3449,7 @@ local function searchByProperty(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		propertyName = propertyName,
 		propertyValue = propertyValue,
@@ -5064,7 +5117,7 @@ return {
         <Properties>
           <string name="Name">State</string>
           <string name="Source"><![CDATA[-- Compiled with roblox-ts v3.0.0
-local CURRENT_VERSION = "2.7.0"
+local CURRENT_VERSION = "2.7.1"
 local MAX_CONNECTIONS = 5
 local BASE_PORT = 58741
 local activeTabIndex = 0
@@ -5074,6 +5127,8 @@ local function createConnection(port)
 		serverUrl = `http://localhost:{port}`,
 		isActive = false,
 		pollInterval = 0.5,
+		maxIdlePollInterval = 2.0,
+		currentPollInterval = 0.5,
 		lastPoll = 0,
 		consecutiveFailures = 0,
 		maxFailuresBeforeError = 50,
@@ -6344,6 +6399,12 @@ local function evaluateFormula(formula, variables, instance, index)
 		return index, "Complex formulas not supported - using index value"
 	end
 end
+local function forEachDescendant(root, visit)
+	visit(root)
+	for _, child in root:GetChildren() do
+		forEachDescendant(child, visit)
+	end
+end
 local function compareVersions(v1, v2)
 	local function parseVersion(v)
 		local parts = {}
@@ -6401,6 +6462,7 @@ return {
 	convertPropertyValue = convertPropertyValue,
 	evaluateFormula = evaluateFormula,
 	compareVersions = compareVersions,
+	forEachDescendant = forEachDescendant,
 }
 ]]></string>
         </Properties>

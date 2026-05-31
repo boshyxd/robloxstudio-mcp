@@ -215,7 +215,9 @@ describe('HTTP Server', () => {
         mcpServerActive: true
       });
       expect(response.body.lastMCPActivity).toBeGreaterThan(0);
-      expect(response.body.uptime).toBeGreaterThan(0);
+      // uptime is Date.now() - startTime, which is legitimately 0 when measured
+      // in the same millisecond as activation. Non-negative is the real invariant.
+      expect(response.body.uptime).toBeGreaterThanOrEqual(0);
     });
   });
 });

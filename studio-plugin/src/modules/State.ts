@@ -11,6 +11,8 @@ function createConnection(port: number): Connection {
 		serverUrl: `http://localhost:${port}`,
 		isActive: false,
 		pollInterval: 0.5,
+		maxIdlePollInterval: 2.0,
+		currentPollInterval: 0.5,
 		lastPoll: 0,
 		consecutiveFailures: 0,
 		maxFailuresBeforeError: 50,

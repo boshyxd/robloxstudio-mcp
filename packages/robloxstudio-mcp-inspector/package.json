@@ -1,6 +1,6 @@
 {
   "name": "robloxstudio-mcp-inspector",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Read-only MCP Server for Roblox Studio - Inspect Studio data, scripts, and objects through AI tools (no write operations)",
   "main": "dist/index.js",
   "type": "module",

@@ -17,7 +17,7 @@ describe('BridgeService', () => {
       const endpoint = '/api/test';
       const data = { test: 'data' };
 
-      const requestPromise = bridgeService.sendRequest(endpoint, data);
+      bridgeService.sendRequest(endpoint, data);
 
       const pendingRequest = bridgeService.getPendingRequest();
       expect(pendingRequest).toBeTruthy();
@@ -129,6 +129,64 @@ describe('BridgeService', () => {
       expect(thirdRequest?.request.data.order).toBe(3);
 
       bridgeService.resolveRequest(thirdRequest!.requestId, {});
+
+      expect(bridgeService.getPendingRequest()).toBeNull();
+    });
+  });
+
+  describe('In-flight dispatch tracking', () => {
+    test('does not hand out the same request twice before it resolves', () => {
+      bridgeService.sendRequest('/api/test', { order: 1 }).catch(() => {});
+
+      const first = bridgeService.getPendingRequest();
+      expect(first).toBeTruthy();
+
+      // A second poll arriving before the first request has resolved must not
+      // be handed the same request again (that causes double execution).
+      const second = bridgeService.getPendingRequest();
+      expect(second).toBeNull();
+    });
+
+    test('hands a second poll the next request instead of repeating the oldest', () => {
+      bridgeService.sendRequest('/api/test1', { order: 1 }).catch(() => {});
+      jest.advanceTimersByTime(10);
+      bridgeService.sendRequest('/api/test2', { order: 2 }).catch(() => {});
+
+      const first = bridgeService.getPendingRequest();
+      expect(first?.request.data.order).toBe(1);
+
+      // Without resolving the first, a concurrent poll should pick up the
+      // second pending request rather than starving behind the oldest.
+      const second = bridgeService.getPendingRequest();
+      expect(second?.request.data.order).toBe(2);
+    });
+
+    test('re-dispatches a request that got no response after the redispatch TTL', () => {
+      bridgeService.sendRequest('/api/test', { order: 1 }).catch(() => {});
+
+      const first = bridgeService.getPendingRequest();
+      expect(first).toBeTruthy();
+      expect(bridgeService.getPendingRequest()).toBeNull();
+
+      // Plugin never answered (dropped response / restart). After the TTL the
+      // request becomes eligible for re-dispatch so it is not lost until the
+      // full 30s request timeout.
+      jest.advanceTimersByTime(11000);
+
+      const redispatched = bridgeService.getPendingRequest();
+      expect(redispatched?.requestId).toBe(first!.requestId);
+    });
+
+    test('keeps a dispatched request reservable by its original requestId for /response', () => {
+      bridgeService.sendRequest('/api/test', { order: 1 }).catch(() => {});
+
+      const dispatched = bridgeService.getPendingRequest();
+      expect(dispatched).toBeTruthy();
+
+      // The request must remain resolvable even though it is no longer offered
+      // to new polls.
+      const response = { ok: true };
+      bridgeService.resolveRequest(dispatched!.requestId, response);
 
       expect(bridgeService.getPendingRequest()).toBeNull();
     });
