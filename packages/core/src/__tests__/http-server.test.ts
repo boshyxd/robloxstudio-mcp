@@ -240,4 +240,11 @@ describe('isPortInUseError', () => {
   test('false for undefined', () => {
     expect(isPortInUseError(undefined)).toBe(false);
   });
+
+  test('false for an unrelated error whose message merely contains "in use"', () => {
+    // The message fallback must be anchored to listenWithRetry's aggregate
+    // phrasing, not any "in use" substring — otherwise it re-introduces the very
+    // masking the helper exists to prevent.
+    expect(isPortInUseError(new Error('GPU resource currently in use'))).toBe(false);
+  });
 });

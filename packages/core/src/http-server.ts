@@ -405,7 +405,10 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
 export function isPortInUseError(err: unknown): boolean {
   if (!err) return false;
   const e = err as { code?: string; message?: string };
-  return e.code === 'EADDRINUSE' || /in use/i.test(e.message ?? '');
+  // Prefer the explicit code (raw EADDRINUSE and listenWithRetry's aggregate
+  // both carry it). The message check is a narrow fallback anchored to the
+  // aggregate phrasing only — a broad /in use/ would re-mask unrelated errors.
+  return e.code === 'EADDRINUSE' || /all ports .* are in use/i.test(e.message ?? '');
 }
 
 /**
