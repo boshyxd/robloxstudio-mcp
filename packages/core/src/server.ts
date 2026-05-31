@@ -7,7 +7,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import http from 'http';
-import { createHttpServer, listenWithRetry, TOOL_HANDLERS } from './http-server.js';
+import { createHttpServer, listenWithRetry, isPortInUseError, TOOL_HANDLERS } from './http-server.js';
 import { RobloxStudioTools } from './tools/index.js';
 import { BridgeService } from './bridge-service.js';
 import { ProxyBridgeService } from './proxy-bridge-service.js';
@@ -104,6 +104,13 @@ export class RobloxStudioMCPServer {
       console.error(`HTTP server listening on ${host}:${boundPort} for Studio plugin (primary mode)`);
       console.error(`Streamable HTTP MCP endpoint: http://localhost:${boundPort}/mcp`);
     } catch (err) {
+      if (!isPortInUseError(err)) {
+        // A real bind failure (permissions, bad host, ...) — surface it instead
+        // of silently entering proxy mode and forwarding to a primary the base
+        // port never actually accepted.
+        console.error(`Fatal: could not bind primary HTTP server: ${(err as Error).message}`);
+        throw err;
+      }
       // Base port already owned by another agent — share its bridge via proxy
       // mode instead of binding a second primary the plugin would never poll.
       console.error(`Could not bind primary HTTP server: ${(err as Error).message}`);

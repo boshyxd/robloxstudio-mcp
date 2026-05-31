@@ -176,18 +176,33 @@ local handledOrder = {}
 local MAX_HANDLED_REQUESTS = 128
 local function rememberHandledRequest(requestId, entry)
 	local _requestId = requestId
-	if not (handledRequests[_requestId] ~= nil) then
-		local _requestId_1 = requestId
-		table.insert(handledOrder, _requestId_1)
-		if #handledOrder > MAX_HANDLED_REQUESTS then
-			local oldest = handledOrder[1]
-			table.remove(handledOrder, 1)
-			handledRequests[oldest] = nil
-		end
-	end
+	local isNew = not (handledRequests[_requestId] ~= nil)
 	local _requestId_1 = requestId
 	local _entry = entry
 	handledRequests[_requestId_1] = _entry
+	if not isNew then
+		return nil
+	end
+	local _requestId_2 = requestId
+	table.insert(handledOrder, _requestId_2)
+	if #handledOrder <= MAX_HANDLED_REQUESTS then
+		return nil
+	end
+	-- Over capacity: evict the oldest *completed* entry only. Never drop an
+	-- in-flight ("processing") id — the server may still re-dispatch it, and
+	-- losing the record here would let the handler run a second time. If the
+	-- whole window is still processing (pathological), allow a brief overflow
+	-- rather than risk a duplicate execution.
+	for i = 0, #handledOrder - 1 do
+		local id = handledOrder[i + 1]
+		local existing = handledRequests[id]
+		if not existing or existing.status == "done" then
+			local _i = i
+			table.remove(handledOrder, _i + 1)
+			handledRequests[id] = nil
+			break
+		end
+	end
 end
 local function getConnectionStatus(connIndex)
 	local conn = State.getConnection(connIndex)

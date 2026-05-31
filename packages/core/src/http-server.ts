@@ -397,6 +397,18 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
 }
 
 /**
+ * Classify a primary-bind failure. Returns true only when the base port is
+ * genuinely occupied, so falling back to proxy mode is the correct response.
+ * Other bind errors (EACCES, bad host, ...) must NOT be masked by proxy mode —
+ * they should surface instead of silently forwarding to a primary that isn't there.
+ */
+export function isPortInUseError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { code?: string; message?: string };
+  return e.code === 'EADDRINUSE' || /in use/i.test(e.message ?? '');
+}
+
+/**
  * Attempt to bind an Express app to a port, using an explicit http.Server
  * so that EADDRINUSE errors are properly caught.
  */
@@ -422,7 +434,9 @@ export function listenWithRetry(
         return;
       }
     }
-    reject(new Error(`All ports ${startPort}-${startPort + maxAttempts - 1} are in use. Stop some MCP server instances and retry.`));
+    const exhausted = new Error(`All ports ${startPort}-${startPort + maxAttempts - 1} are in use. Stop some MCP server instances and retry.`) as NodeJS.ErrnoException;
+    exhausted.code = 'EADDRINUSE';
+    reject(exhausted);
   });
 }
 

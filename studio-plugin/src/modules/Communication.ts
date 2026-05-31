@@ -147,15 +147,27 @@ const handledOrder: string[] = [];
 const MAX_HANDLED_REQUESTS = 128;
 
 function rememberHandledRequest(requestId: string, entry: HandledRequest) {
-	if (!handledRequests.has(requestId)) {
-		handledOrder.push(requestId);
-		if (handledOrder.size() > MAX_HANDLED_REQUESTS) {
-			const oldest = handledOrder[0];
-			handledOrder.remove(0);
-			handledRequests.delete(oldest);
+	const isNew = !handledRequests.has(requestId);
+	handledRequests.set(requestId, entry);
+	if (!isNew) return;
+
+	handledOrder.push(requestId);
+	if (handledOrder.size() <= MAX_HANDLED_REQUESTS) return;
+
+	// Over capacity: evict the oldest *completed* entry only. Never drop an
+	// in-flight ("processing") id — the server may still re-dispatch it, and
+	// losing the record here would let the handler run a second time. If the
+	// whole window is still processing (pathological), allow a brief overflow
+	// rather than risk a duplicate execution.
+	for (let i = 0; i < handledOrder.size(); i++) {
+		const id = handledOrder[i];
+		const existing = handledRequests.get(id);
+		if (!existing || existing.status === "done") {
+			handledOrder.remove(i);
+			handledRequests.delete(id);
+			break;
 		}
 	}
-	handledRequests.set(requestId, entry);
 }
 
 function getConnectionStatus(connIndex: number): string {

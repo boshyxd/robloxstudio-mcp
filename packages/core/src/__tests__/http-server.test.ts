@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { createHttpServer } from '../http-server.js';
+import { createHttpServer, isPortInUseError } from '../http-server.js';
 import { RobloxStudioTools } from '../tools/index.js';
 import { BridgeService } from '../bridge-service.js';
 import { Application } from 'express';
@@ -219,5 +219,25 @@ describe('HTTP Server', () => {
       // in the same millisecond as activation. Non-negative is the real invariant.
       expect(response.body.uptime).toBeGreaterThanOrEqual(0);
     });
+  });
+});
+
+describe('isPortInUseError', () => {
+  test('true when the error carries the EADDRINUSE code', () => {
+    const err = Object.assign(new Error('listen EADDRINUSE: address already in use'), { code: 'EADDRINUSE' });
+    expect(isPortInUseError(err)).toBe(true);
+  });
+
+  test('true for the aggregate "all ports in use" error from listenWithRetry', () => {
+    expect(isPortInUseError(new Error('All ports 58741-58741 are in use. Stop some MCP server instances and retry.'))).toBe(true);
+  });
+
+  test('false for a non-port bind error (e.g. EACCES) so proxy mode does not mask it', () => {
+    const err = Object.assign(new Error('listen EACCES: permission denied'), { code: 'EACCES' });
+    expect(isPortInUseError(err)).toBe(false);
+  });
+
+  test('false for undefined', () => {
+    expect(isPortInUseError(undefined)).toBe(false);
   });
 });
