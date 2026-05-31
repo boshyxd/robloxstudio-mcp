@@ -190,5 +190,21 @@ describe('BridgeService', () => {
 
       expect(bridgeService.getPendingRequest()).toBeNull();
     });
+
+    test('prefers fresh undispatched work over an older TTL-expired in-flight request', () => {
+      // An old request is dispatched, then stalls (no response arrives).
+      bridgeService.sendRequest('/api/old', { order: 1 }).catch(() => {});
+      const first = bridgeService.getPendingRequest();
+      expect(first?.request.data.order).toBe(1);
+
+      // It crosses the redispatch TTL, and meanwhile newer work arrives.
+      jest.advanceTimersByTime(11000);
+      bridgeService.sendRequest('/api/new', { order: 2 }).catch(() => {});
+
+      // The fresh undispatched request must be served before the stalled
+      // re-offer — otherwise the old request keeps leapfrogging new work.
+      const next = bridgeService.getPendingRequest();
+      expect(next?.request.data.order).toBe(2);
+    });
   });
 });

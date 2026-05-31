@@ -118,20 +118,27 @@ export class BridgeService {
   getPendingRequest(callerRole = 'edit'): { requestId: string; request: { endpoint: string; data: any } } | null {
 
     const now = Date.now();
-    let oldestRequest: PendingRequest | null = null;
+    let oldestUndispatched: PendingRequest | null = null;
+    let oldestExpired: PendingRequest | null = null;
 
     for (const request of this.pendingRequests.values()) {
       if (request.target !== callerRole) continue;
-      // Skip requests already handed to a poller, unless they have gone
-      // unanswered past the redispatch TTL.
-      if (request.dispatchedAt !== undefined && now - request.dispatchedAt < this.redispatchTimeout) {
-        continue;
-      }
-      if (!oldestRequest || request.timestamp < oldestRequest.timestamp) {
-        oldestRequest = request;
+
+      if (request.dispatchedAt === undefined) {
+        // Fresh, never-dispatched work — always preferred.
+        if (!oldestUndispatched || request.timestamp < oldestUndispatched.timestamp) {
+          oldestUndispatched = request;
+        }
+      } else if (now - request.dispatchedAt >= this.redispatchTimeout) {
+        // In-flight but unanswered past the TTL — eligible only as a fallback so
+        // a stalled re-offer cannot leapfrog newer undispatched work.
+        if (!oldestExpired || request.timestamp < oldestExpired.timestamp) {
+          oldestExpired = request;
+        }
       }
     }
 
+    const oldestRequest = oldestUndispatched ?? oldestExpired;
     if (oldestRequest) {
       oldestRequest.dispatchedAt = now;
       return {
