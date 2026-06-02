@@ -3002,6 +3002,7 @@ local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
+local forEachDescendant = _binding.forEachDescendant
 local function getFileTree(requestData)
 	local _condition = (requestData.path)
 	if _condition == nil then
@@ -3060,7 +3061,7 @@ local function searchFiles(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3087,11 +3088,7 @@ local function searchFiles(requestData)
 			end
 			table.insert(results, entry)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3167,7 +3164,7 @@ local function searchObjects(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3198,11 +3195,7 @@ local function searchObjects(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3373,7 +3366,7 @@ local function searchByProperty(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local success, value = pcall(function()
 			return tostring(instance[propertyName])
 		end)
@@ -3392,11 +3385,7 @@ local function searchByProperty(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		propertyName = propertyName,
 		propertyValue = propertyValue,
@@ -4736,6 +4725,64 @@ local testResult
 local testError
 local stopListenerScript
 local navResultCallback
+-- Marker for the playtest's start time so backfillFromHistory can filter the
+-- LogService history to entries produced during this playtest.
+local playtestStartedAt = 0
+-- LogService.MessageOut connections established in Edit-mode plugin context
+-- don't reliably fire for playtest server output in current Roblox builds — the
+-- Studio DataModel swap on entering play orphans pre-play connections, leaving
+-- `outputBuffer` empty even when the playtest writes plenty of output.
+--
+-- LogService.GetLogHistory(), in contrast, returns the unified output panel
+-- history including playtest entries. Polling it on every getPlaytestOutput
+-- call and on stop_playtest backfills anything MessageOut missed, while keeping
+-- the live MessageOut hookup so non-broken Studio builds still see real-time
+-- updates without doing the extra work.
+local function backfillFromHistory()
+	local ok, history = pcall(function()
+		return game:GetService("LogService"):GetLogHistory()
+	end)
+	if not ok then
+		return nil
+	end
+	local seen = {}
+	for _, entry in outputBuffer do
+		local _arg0 = `{entry.timestamp}|{entry.message}`
+		seen[_arg0] = true
+	end
+	for _, entry in history do
+		if entry.timestamp < playtestStartedAt then
+			continue
+		end
+		local message = entry.message
+		if message == STOP_SIGNAL then
+			continue
+		end
+		local _arg1 = #NAV_SIGNAL
+		if string.sub(message, 1, _arg1) == NAV_SIGNAL then
+			continue
+		end
+		local _arg1_1 = #NAV_RESULT + 1
+		if string.sub(message, 1, _arg1_1) == `{NAV_RESULT}:` then
+			continue
+		end
+		local key = `{entry.timestamp}|{message}`
+		if seen[key] ~= nil then
+			continue
+		end
+		seen[key] = true
+		local _outputBuffer = outputBuffer
+		local _arg0 = {
+			message = message,
+			messageType = tostring(entry.messageType),
+			timestamp = entry.timestamp,
+		}
+		table.insert(_outputBuffer, _arg0)
+	end
+	table.sort(outputBuffer, function(a, b)
+		return a.timestamp < b.timestamp
+	end)
+end
 local function buildCommandListenerSource()
 	return `local LogService = game:GetService("LogService")\
 local StudioTestService = game:GetService("StudioTestService")\
@@ -4844,6 +4891,7 @@ local function startPlaytest(requestData)
 	outputBuffer = {}
 	testResult = nil
 	testError = nil
+	playtestStartedAt = tick()
 	cleanupStopListener()
 	logConnection = LogService.MessageOut:Connect(function(message, messageType)
 		if message == STOP_SIGNAL then
@@ -4899,6 +4947,9 @@ local function startPlaytest(requestData)
 			logConnection:Disconnect()
 			logConnection = nil
 		end
+		-- Final backfill so stop_playtest and any post-play getPlaytestOutput call
+		-- see the full playtest log even if the live MessageOut hookup didn't fire.
+		backfillFromHistory()
 		testRunning = false
 		cleanupStopListener()
 	end)
@@ -4910,6 +4961,10 @@ local function startPlaytest(requestData)
 end
 local function stopPlaytest(_requestData)
 	if testRunning then
+		-- Snapshot LogService history before signalling stop so the response
+		-- already contains the playtest output even if the spawned task hasn't
+		-- returned from ExecutePlayModeAsync yet.
+		backfillFromHistory()
 		warn(STOP_SIGNAL)
 		local _object = {
 			success = true,
@@ -4940,6 +4995,11 @@ local function stopPlaytest(_requestData)
 	}
 end
 local function getPlaytestOutput(_requestData)
+	-- Pull the latest LogService history into outputBuffer on every poll —
+	-- MessageOut alone is unreliable across Studio's Edit↔Play DataModel swap.
+	if testRunning then
+		backfillFromHistory()
+	end
 	local _object = {
 		isRunning = testRunning,
 	}
@@ -6344,6 +6404,12 @@ local function evaluateFormula(formula, variables, instance, index)
 		return index, "Complex formulas not supported - using index value"
 	end
 end
+local function forEachDescendant(root, visit)
+	visit(root)
+	for _, child in root:GetChildren() do
+		forEachDescendant(child, visit)
+	end
+end
 local function compareVersions(v1, v2)
 	local function parseVersion(v)
 		local parts = {}
@@ -6401,6 +6467,7 @@ return {
 	convertPropertyValue = convertPropertyValue,
 	evaluateFormula = evaluateFormula,
 	compareVersions = compareVersions,
+	forEachDescendant = forEachDescendant,
 }
 ]]></string>
         </Properties>

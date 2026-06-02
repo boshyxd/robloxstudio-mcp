@@ -21,6 +21,44 @@ let testResult: unknown;
 let testError: string | undefined;
 let stopListenerScript: Script | undefined;
 let navResultCallback: ((json: string) => void) | undefined;
+// Marker for the playtest's start time so backfillFromHistory can filter the
+// LogService history to entries produced during this playtest.
+let playtestStartedAt = 0;
+
+// LogService.MessageOut connections established in Edit-mode plugin context
+// don't reliably fire for playtest server output in current Roblox builds — the
+// Studio DataModel swap on entering play orphans pre-play connections, leaving
+// `outputBuffer` empty even when the playtest writes plenty of output.
+//
+// LogService.GetLogHistory(), in contrast, returns the unified output panel
+// history including playtest entries. Polling it on every getPlaytestOutput
+// call and on stop_playtest backfills anything MessageOut missed, while keeping
+// the live MessageOut hookup so non-broken Studio builds still see real-time
+// updates without doing the extra work.
+function backfillFromHistory(): void {
+	const [ok, history] = pcall(() => game.GetService("LogService").GetLogHistory());
+	if (!ok) return;
+	const seen = new Set<string>();
+	for (const entry of outputBuffer) {
+		seen.add(`${entry.timestamp}|${entry.message}`);
+	}
+	for (const entry of history) {
+		if (entry.timestamp < playtestStartedAt) continue;
+		const message = entry.message;
+		if (message === STOP_SIGNAL) continue;
+		if (message.sub(1, NAV_SIGNAL.size()) === NAV_SIGNAL) continue;
+		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:`) continue;
+		const key = `${entry.timestamp}|${message}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		outputBuffer.push({
+			message,
+			messageType: tostring(entry.messageType),
+			timestamp: entry.timestamp,
+		});
+	}
+	outputBuffer.sort((a, b) => a.timestamp < b.timestamp);
+}
 
 function buildCommandListenerSource(): string {
 	return `local LogService = game:GetService("LogService")
@@ -130,6 +168,7 @@ function startPlaytest(requestData: Record<string, unknown>) {
 	outputBuffer = [];
 	testResult = undefined;
 	testError = undefined;
+	playtestStartedAt = tick();
 
 	cleanupStopListener();
 
@@ -177,6 +216,9 @@ function startPlaytest(requestData: Record<string, unknown>) {
 			logConnection.Disconnect();
 			logConnection = undefined;
 		}
+		// Final backfill so stop_playtest and any post-play getPlaytestOutput call
+		// see the full playtest log even if the live MessageOut hookup didn't fire.
+		backfillFromHistory();
 		testRunning = false;
 
 		cleanupStopListener();
@@ -190,6 +232,10 @@ function startPlaytest(requestData: Record<string, unknown>) {
 
 function stopPlaytest(_requestData: Record<string, unknown>) {
 	if (testRunning) {
+		// Snapshot LogService history before signalling stop so the response
+		// already contains the playtest output even if the spawned task hasn't
+		// returned from ExecutePlayModeAsync yet.
+		backfillFromHistory();
 		warn(STOP_SIGNAL);
 		return {
 			success: true,
@@ -216,6 +262,11 @@ function stopPlaytest(_requestData: Record<string, unknown>) {
 }
 
 function getPlaytestOutput(_requestData: Record<string, unknown>) {
+	// Pull the latest LogService history into outputBuffer on every poll —
+	// MessageOut alone is unreliable across Studio's Edit↔Play DataModel swap.
+	if (testRunning) {
+		backfillFromHistory();
+	}
 	return {
 		isRunning: testRunning,
 		output: [...outputBuffer],
