@@ -111,8 +111,6 @@ local routeMap = {
 	["/api/redo"] = MetadataHandlers.redo,
 	["/api/bulk-set-attributes"] = MetadataHandlers.bulkSetAttributes,
 	["/api/start-playtest"] = TestHandlers.startPlaytest,
-	["/api/stop-playtest"] = TestHandlers.stopPlaytest,
-	["/api/get-playtest-output"] = TestHandlers.getPlaytestOutput,
 	["/api/character-navigation"] = TestHandlers.characterNavigation,
 	["/api/export-build"] = BuildHandlers.exportBuild,
 	["/api/import-build"] = BuildHandlers.importBuild,
@@ -4712,69 +4710,82 @@ local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local _services = TS.import(script, script.Parent.Parent.Parent, "node_modules", "@rbxts", "services")
 local HttpService = _services.HttpService
 local LogService = _services.LogService
+local State = TS.import(script, script.Parent.Parent, "State")
 local StudioTestService = game:GetService("StudioTestService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
-local STOP_SIGNAL = "__MCP_STOP__"
 local NAV_SIGNAL = "__MCP_NAV__"
 local NAV_RESULT = "__MCP_NAV_RESULT__"
 local testRunning = false
-local outputBuffer = {}
-local logConnection
+local editNavConnection
 local testResult
 local testError
 local stopListenerScript
 local navResultCallback
-local playtestStartedAt = 0
--- MessageOut from the Edit-mode plugin context does not see playtest server
--- output after the Studio DataModel swap, so we rebuild outputBuffer from
--- LogService.GetLogHistory() on every poll. History is the single source of
--- truth; the live MessageOut connection is kept only to route NAV results.
-local function rebuildOutputFromHistory()
-	local ok, history = pcall(function()
-		return game:GetService("LogService"):GetLogHistory()
-	end)
-	if not ok then
-		return nil
-	end
-	local entries = {}
-	for _, entry in history do
-		if entry.timestamp < playtestStartedAt then
-			continue
-		end
-		local message = entry.message
-		if message == STOP_SIGNAL then
-			continue
-		end
-		local _arg1 = #NAV_SIGNAL
-		if string.sub(message, 1, _arg1) == NAV_SIGNAL then
-			continue
-		end
-		local _arg1_1 = #NAV_RESULT + 1
-		if string.sub(message, 1, _arg1_1) == `{NAV_RESULT}:` then
-			continue
-		end
-		local _arg0 = {
-			message = message,
-			messageType = tostring(entry.messageType),
-			timestamp = entry.timestamp,
-		}
-		table.insert(entries, _arg0)
-	end
-	outputBuffer = entries
-end
-local function buildCommandListenerSource()
+local function buildCommandListenerSource(baseUrl)
 	return `local LogService = game:GetService("LogService")\
 local StudioTestService = game:GetService("StudioTestService")\
 local PathfindingService = game:GetService("PathfindingService")\
 local Players = game:GetService("Players")\
 local HttpService = game:GetService("HttpService")\
+local BASE = "{baseUrl}"\
 local NAV_SIG = "{NAV_SIGNAL}"\
 local NAV_RES = "{NAV_RESULT}"\
+local OUTPUT_URL = BASE .. "/playtest/output"\
+local COMMAND_URL = BASE .. "/playtest/command"\
+\
+local pending = \{\}\
+LogService.MessageOut:Connect(function(msg, mt)\
+	if string.sub(msg, 1, #NAV_SIG) == NAV_SIG then return end\
+	if string.sub(msg, 1, #NAV_RES) == NAV_RES then return end\
+	table.insert(pending, \{\
+		message = msg,\
+		messageType = mt.Name,\
+		timestamp = tick(),\
+	\})\
+end)\
+\
+task.spawn(function()\
+	while true do\
+		task.wait(0.2)\
+		if #pending > 0 then\
+			local batch = pending\
+			pending = \{\}\
+			pcall(function()\
+				HttpService:RequestAsync(\{\
+					Url = OUTPUT_URL,\
+					Method = "POST",\
+					Headers = \{ ["Content-Type"] = "application/json" \},\
+					Body = HttpService:JSONEncode(\{ entries = batch \}),\
+				\})\
+			end)\
+		end\
+	end\
+end)\
+\
+task.spawn(function()\
+	while true do\
+		task.wait(0.5)\
+		local ok, response = pcall(function()\
+			return HttpService:RequestAsync(\{\
+				Url = COMMAND_URL,\
+				Method = "GET",\
+			\})\
+		end)\
+		if ok and response.Success and response.Body then\
+			local parsed\
+			local decodeOk\
+			decodeOk, parsed = pcall(function() return HttpService:JSONDecode(response.Body) end)\
+			if decodeOk and parsed and parsed.stop then\
+				pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)\
+				return\
+			end\
+		end\
+	end\
+end)\
+\
 LogService.MessageOut:Connect(function(msg)\
-	if msg == "{STOP_SIGNAL}" then\
-		pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)\
-	elseif string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then\
+	if string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then\
 		local json = string.sub(msg, #NAV_SIG + 2)\
 		task.spawn(function()\
 			local ok, d = pcall(function() return HttpService:JSONDecode(json) end)\
@@ -4831,11 +4842,11 @@ LogService.MessageOut:Connect(function(msg)\
 	end\
 end)`
 end
-local function injectStopListener()
+local function injectStopListener(baseUrl)
 	local listener = Instance.new("Script")
 	listener.Name = "__MCP_CommandListener"
 	listener.Parent = ServerScriptService
-	local source = buildCommandListenerSource()
+	local source = buildCommandListenerSource(baseUrl)
 	local seOk = pcall(function()
 		ScriptEditorService:UpdateSourceAsync(listener, function()
 			return source
@@ -4854,6 +4865,18 @@ local function cleanupStopListener()
 		stopListenerScript = nil
 	end
 end
+local function notifyPlaytestEnded(baseUrl)
+	pcall(function()
+		HttpService:RequestAsync({
+			Url = `{baseUrl}/playtest/end`,
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json",
+			},
+			Body = "{}",
+		})
+	end)
+end
 local function startPlaytest(requestData)
 	local mode = requestData.mode
 	local numPlayers = requestData.numPlayers
@@ -4867,13 +4890,13 @@ local function startPlaytest(requestData)
 			error = "A test is already running",
 		}
 	end
+	local conn = State.getActiveConnection()
+	local baseUrl = conn.serverUrl
 	testRunning = true
-	outputBuffer = {}
 	testResult = nil
 	testError = nil
-	playtestStartedAt = tick()
 	cleanupStopListener()
-	logConnection = LogService.MessageOut:Connect(function(message)
+	editNavConnection = LogService.MessageOut:Connect(function(message)
 		local _message = message
 		local _arg1 = #NAV_RESULT + 1
 		local _condition = string.sub(_message, 1, _arg1) == `{NAV_RESULT}:`
@@ -4888,10 +4911,10 @@ local function startPlaytest(requestData)
 		end
 	end)
 	local injected, injErr = pcall(function()
-		return injectStopListener()
+		return injectStopListener(baseUrl)
 	end)
 	if not injected then
-		warn(`[MCP] Failed to inject stop listener: {injErr}`)
+		warn(`[MCP] Failed to inject playtest listener: {injErr}`)
 	end
 	if numPlayers ~= nil and mode == "run" then
 		local TestService = game:GetService("TestService")
@@ -4909,12 +4932,12 @@ local function startPlaytest(requestData)
 		else
 			testError = tostring(result)
 		end
-		if logConnection then
-			logConnection:Disconnect()
-			logConnection = nil
+		if editNavConnection then
+			editNavConnection:Disconnect()
+			editNavConnection = nil
 		end
-		rebuildOutputFromHistory()
 		testRunning = false
+		notifyPlaytestEnded(baseUrl)
 		cleanupStopListener()
 	end)
 	local msg = if numPlayers ~= nil then `Playtest started in {mode} mode with {numPlayers} player(s)` else `Playtest started in {mode} mode`
@@ -4922,55 +4945,6 @@ local function startPlaytest(requestData)
 		success = true,
 		message = msg,
 	}
-end
-local function stopPlaytest(_requestData)
-	if testRunning then
-		rebuildOutputFromHistory()
-		warn(STOP_SIGNAL)
-		local _object = {
-			success = true,
-		}
-		local _left = "output"
-		local _array = {}
-		local _length = #_array
-		table.move(outputBuffer, 1, #outputBuffer, _length + 1, _array)
-		_object[_left] = _array
-		_object.outputCount = #outputBuffer
-		_object.message = "Playtest stop signal sent."
-		return _object
-	end
-	local endTest = StudioTestService
-	local endOk = pcall(function()
-		endTest:EndTest("stopped_by_mcp")
-	end)
-	if endOk then
-		return {
-			success = true,
-			output = {},
-			outputCount = 0,
-			message = "Playtest stopped via StudioTestService.",
-		}
-	end
-	return {
-		error = "No MCP-started test is running and direct stop failed. The playtest may have been started manually.",
-	}
-end
-local function getPlaytestOutput(_requestData)
-	if testRunning then
-		rebuildOutputFromHistory()
-	end
-	local _object = {
-		isRunning = testRunning,
-	}
-	local _left = "output"
-	local _array = {}
-	local _length = #_array
-	table.move(outputBuffer, 1, #outputBuffer, _length + 1, _array)
-	_object[_left] = _array
-	_object.outputCount = #outputBuffer
-	_object.testResult = if testResult ~= nil then tostring(testResult) else nil
-	_object.testError = testError
-	return _object
 end
 local function characterNavigation(requestData)
 	if not testRunning then
@@ -5041,8 +5015,6 @@ local function characterNavigation(requestData)
 end
 return {
 	startPlaytest = startPlaytest,
-	stopPlaytest = stopPlaytest,
-	getPlaytestOutput = getPlaytestOutput,
 	characterNavigation = characterNavigation,
 }
 ]]></string>

@@ -662,6 +662,7 @@ export class RobloxStudioTools {
     if (mode !== 'play' && mode !== 'run') {
       throw new Error('mode must be "play" or "run"');
     }
+    this.bridge.resetPlaytest();
     const data: Record<string, unknown> = { mode };
     if (numPlayers !== undefined) {
       data.numPlayers = numPlayers;
@@ -678,31 +679,35 @@ export class RobloxStudioTools {
   }
 
   async stopPlaytest() {
-    const response = await this.client.request('/api/stop-playtest', {});
-    // EndTest can only run in the playtest server DataModel, so route a follow-up
-    // to the server role. If no playtest server is connected, skip silently.
-    try {
-      await this.client.request('/api/end-test', {}, 'server');
-    } catch {
-      // ignore: no server-role plugin connected, or already stopped
-    }
+    this.bridge.requestPlaytestStop();
+    const buffer = this.bridge.getPlaytestBuffer();
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(response)
+          text: JSON.stringify({
+            success: true,
+            isRunning: this.bridge.isPlaytestActive(),
+            output: buffer,
+            outputCount: buffer.length,
+            message: 'Stop requested; injected listener will call EndTest on its next poll.',
+          })
         }
       ]
     };
   }
 
-  async getPlaytestOutput(target?: string) {
-    const response = await this.client.request('/api/get-playtest-output', {}, target || 'edit');
+  async getPlaytestOutput(_target?: string) {
+    const buffer = this.bridge.getPlaytestBuffer();
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(response)
+          text: JSON.stringify({
+            isRunning: this.bridge.isPlaytestActive(),
+            output: buffer,
+            outputCount: buffer.length,
+          })
         }
       ]
     };

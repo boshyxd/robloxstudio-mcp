@@ -1,63 +1,84 @@
 import { HttpService, LogService } from "@rbxts/services";
+import State from "../State";
 
 const StudioTestService = game.GetService("StudioTestService");
 const ServerScriptService = game.GetService("ServerScriptService");
 const ScriptEditorService = game.GetService("ScriptEditorService");
 
-const STOP_SIGNAL = "__MCP_STOP__";
 const NAV_SIGNAL = "__MCP_NAV__";
 const NAV_RESULT = "__MCP_NAV_RESULT__";
 
-interface OutputEntry {
-	message: string;
-	messageType: string;
-	timestamp: number;
-}
-
 let testRunning = false;
-let outputBuffer: OutputEntry[] = [];
-let logConnection: RBXScriptConnection | undefined;
+let editNavConnection: RBXScriptConnection | undefined;
 let testResult: unknown;
 let testError: string | undefined;
 let stopListenerScript: Script | undefined;
 let navResultCallback: ((json: string) => void) | undefined;
-let playtestStartedAt = 0;
 
-// MessageOut from the Edit-mode plugin context does not see playtest server
-// output after the Studio DataModel swap, so we rebuild outputBuffer from
-// LogService.GetLogHistory() on every poll. History is the single source of
-// truth; the live MessageOut connection is kept only to route NAV results.
-function rebuildOutputFromHistory(): void {
-	const [ok, history] = pcall(() => game.GetService("LogService").GetLogHistory());
-	if (!ok) return;
-	const entries: OutputEntry[] = [];
-	for (const entry of history) {
-		if (entry.timestamp < playtestStartedAt) continue;
-		const message = entry.message;
-		if (message === STOP_SIGNAL) continue;
-		if (message.sub(1, NAV_SIGNAL.size()) === NAV_SIGNAL) continue;
-		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:`) continue;
-		entries.push({
-			message,
-			messageType: tostring(entry.messageType),
-			timestamp: entry.timestamp,
-		});
-	}
-	outputBuffer = entries;
-}
-
-function buildCommandListenerSource(): string {
+function buildCommandListenerSource(baseUrl: string): string {
 	return `local LogService = game:GetService("LogService")
 local StudioTestService = game:GetService("StudioTestService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local BASE = "${baseUrl}"
 local NAV_SIG = "${NAV_SIGNAL}"
 local NAV_RES = "${NAV_RESULT}"
+local OUTPUT_URL = BASE .. "/playtest/output"
+local COMMAND_URL = BASE .. "/playtest/command"
+
+local pending = {}
+LogService.MessageOut:Connect(function(msg, mt)
+	if string.sub(msg, 1, #NAV_SIG) == NAV_SIG then return end
+	if string.sub(msg, 1, #NAV_RES) == NAV_RES then return end
+	table.insert(pending, {
+		message = msg,
+		messageType = mt.Name,
+		timestamp = tick(),
+	})
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(0.2)
+		if #pending > 0 then
+			local batch = pending
+			pending = {}
+			pcall(function()
+				HttpService:RequestAsync({
+					Url = OUTPUT_URL,
+					Method = "POST",
+					Headers = { ["Content-Type"] = "application/json" },
+					Body = HttpService:JSONEncode({ entries = batch }),
+				})
+			end)
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		local ok, response = pcall(function()
+			return HttpService:RequestAsync({
+				Url = COMMAND_URL,
+				Method = "GET",
+			})
+		end)
+		if ok and response.Success and response.Body then
+			local parsed
+			local decodeOk
+			decodeOk, parsed = pcall(function() return HttpService:JSONDecode(response.Body) end)
+			if decodeOk and parsed and parsed.stop then
+				pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)
+				return
+			end
+		end
+	end
+end)
+
 LogService.MessageOut:Connect(function(msg)
-	if msg == "${STOP_SIGNAL}" then
-		pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)
-	elseif string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then
+	if string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then
 		local json = string.sub(msg, #NAV_SIG + 2)
 		task.spawn(function()
 			local ok, d = pcall(function() return HttpService:JSONDecode(json) end)
@@ -115,12 +136,12 @@ LogService.MessageOut:Connect(function(msg)
 end)`;
 }
 
-function injectStopListener() {
+function injectStopListener(baseUrl: string) {
 	const listener = new Instance("Script");
 	listener.Name = "__MCP_CommandListener";
 	listener.Parent = ServerScriptService;
 
-	const source = buildCommandListenerSource();
+	const source = buildCommandListenerSource(baseUrl);
 	const [seOk] = pcall(() => {
 		ScriptEditorService.UpdateSourceAsync(listener, () => source);
 	});
@@ -138,6 +159,17 @@ function cleanupStopListener() {
 	}
 }
 
+function notifyPlaytestEnded(baseUrl: string) {
+	pcall(() => {
+		HttpService.RequestAsync({
+			Url: `${baseUrl}/playtest/end`,
+			Method: "POST",
+			Headers: { ["Content-Type"]: "application/json" },
+			Body: "{}",
+		});
+	});
+}
+
 function startPlaytest(requestData: Record<string, unknown>) {
 	const mode = requestData.mode as string | undefined;
 	const numPlayers = requestData.numPlayers as number | undefined;
@@ -150,23 +182,24 @@ function startPlaytest(requestData: Record<string, unknown>) {
 		return { error: "A test is already running" };
 	}
 
+	const conn = State.getActiveConnection();
+	const baseUrl = conn.serverUrl;
+
 	testRunning = true;
-	outputBuffer = [];
 	testResult = undefined;
 	testError = undefined;
-	playtestStartedAt = tick();
 
 	cleanupStopListener();
 
-	logConnection = LogService.MessageOut.Connect((message) => {
+	editNavConnection = LogService.MessageOut.Connect((message) => {
 		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:` && navResultCallback) {
 			navResultCallback(message.sub(NAV_RESULT.size() + 2));
 		}
 	});
 
-	const [injected, injErr] = pcall(() => injectStopListener());
+	const [injected, injErr] = pcall(() => injectStopListener(baseUrl));
 	if (!injected) {
-		warn(`[MCP] Failed to inject stop listener: ${injErr}`);
+		warn(`[MCP] Failed to inject playtest listener: ${injErr}`);
 	}
 
 	if (numPlayers !== undefined && mode === "run") {
@@ -188,13 +221,12 @@ function startPlaytest(requestData: Record<string, unknown>) {
 			testError = tostring(result);
 		}
 
-		if (logConnection) {
-			logConnection.Disconnect();
-			logConnection = undefined;
+		if (editNavConnection) {
+			editNavConnection.Disconnect();
+			editNavConnection = undefined;
 		}
-		rebuildOutputFromHistory();
 		testRunning = false;
-
+		notifyPlaytestEnded(baseUrl);
 		cleanupStopListener();
 	});
 
@@ -202,55 +234,6 @@ function startPlaytest(requestData: Record<string, unknown>) {
 		? `Playtest started in ${mode} mode with ${numPlayers} player(s)`
 		: `Playtest started in ${mode} mode`;
 	return { success: true, message: msg };
-}
-
-function stopPlaytest(_requestData: Record<string, unknown>) {
-	if (testRunning) {
-		rebuildOutputFromHistory();
-		warn(STOP_SIGNAL);
-		return {
-			success: true,
-			output: [...outputBuffer],
-			outputCount: outputBuffer.size(),
-			message: "Playtest stop signal sent.",
-		};
-	}
-
-	const endTest = StudioTestService as unknown as Instance & { EndTest(reason: string): void };
-	const [endOk] = pcall(() => {
-		endTest.EndTest("stopped_by_mcp");
-	});
-	if (endOk) {
-		return {
-			success: true,
-			output: [],
-			outputCount: 0,
-			message: "Playtest stopped via StudioTestService.",
-		};
-	}
-
-	return { error: "No MCP-started test is running and direct stop failed. The playtest may have been started manually." };
-}
-
-function getPlaytestOutput(_requestData: Record<string, unknown>) {
-	if (testRunning) {
-		rebuildOutputFromHistory();
-	}
-	return {
-		isRunning: testRunning,
-		output: [...outputBuffer],
-		outputCount: outputBuffer.size(),
-		testResult: testResult !== undefined ? tostring(testResult) : undefined,
-		testError,
-	};
-}
-
-// Must be called on the playtest server role; EndTest errors in Edit context.
-function endTest(_requestData: Record<string, unknown>) {
-	const target = StudioTestService as unknown as Instance & { EndTest(reason: string): void };
-	const [ok, err] = pcall(() => target.EndTest("stopped_by_mcp"));
-	if (ok) return { success: true };
-	return { error: tostring(err) };
 }
 
 function characterNavigation(requestData: Record<string, unknown>) {
@@ -301,8 +284,5 @@ function characterNavigation(requestData: Record<string, unknown>) {
 
 export = {
 	startPlaytest,
-	stopPlaytest,
-	endTest,
-	getPlaytestOutput,
 	characterNavigation,
 };
