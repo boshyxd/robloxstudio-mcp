@@ -21,43 +21,29 @@ let testResult: unknown;
 let testError: string | undefined;
 let stopListenerScript: Script | undefined;
 let navResultCallback: ((json: string) => void) | undefined;
-// Marker for the playtest's start time so backfillFromHistory can filter the
-// LogService history to entries produced during this playtest.
 let playtestStartedAt = 0;
 
-// LogService.MessageOut connections established in Edit-mode plugin context
-// don't reliably fire for playtest server output in current Roblox builds — the
-// Studio DataModel swap on entering play orphans pre-play connections, leaving
-// `outputBuffer` empty even when the playtest writes plenty of output.
-//
-// LogService.GetLogHistory(), in contrast, returns the unified output panel
-// history including playtest entries. Polling it on every getPlaytestOutput
-// call and on stop_playtest backfills anything MessageOut missed, while keeping
-// the live MessageOut hookup so non-broken Studio builds still see real-time
-// updates without doing the extra work.
-function backfillFromHistory(): void {
+// MessageOut from the Edit-mode plugin context does not see playtest server
+// output after the Studio DataModel swap, so we rebuild outputBuffer from
+// LogService.GetLogHistory() on every poll. History is the single source of
+// truth; the live MessageOut connection is kept only to route NAV results.
+function rebuildOutputFromHistory(): void {
 	const [ok, history] = pcall(() => game.GetService("LogService").GetLogHistory());
 	if (!ok) return;
-	const seen = new Set<string>();
-	for (const entry of outputBuffer) {
-		seen.add(`${entry.timestamp}|${entry.message}`);
-	}
+	const entries: OutputEntry[] = [];
 	for (const entry of history) {
 		if (entry.timestamp < playtestStartedAt) continue;
 		const message = entry.message;
 		if (message === STOP_SIGNAL) continue;
 		if (message.sub(1, NAV_SIGNAL.size()) === NAV_SIGNAL) continue;
 		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:`) continue;
-		const key = `${entry.timestamp}|${message}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
-		outputBuffer.push({
+		entries.push({
 			message,
 			messageType: tostring(entry.messageType),
 			timestamp: entry.timestamp,
 		});
 	}
-	outputBuffer.sort((a, b) => a.timestamp < b.timestamp);
+	outputBuffer = entries;
 }
 
 function buildCommandListenerSource(): string {
@@ -172,20 +158,10 @@ function startPlaytest(requestData: Record<string, unknown>) {
 
 	cleanupStopListener();
 
-	logConnection = LogService.MessageOut.Connect((message, messageType) => {
-		if (message === STOP_SIGNAL) return;
-		if (message.sub(1, NAV_SIGNAL.size()) === NAV_SIGNAL) return;
-		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:`) {
-			if (navResultCallback) {
-				navResultCallback(message.sub(NAV_RESULT.size() + 2));
-			}
-			return;
+	logConnection = LogService.MessageOut.Connect((message) => {
+		if (message.sub(1, NAV_RESULT.size() + 1) === `${NAV_RESULT}:` && navResultCallback) {
+			navResultCallback(message.sub(NAV_RESULT.size() + 2));
 		}
-		outputBuffer.push({
-			message,
-			messageType: messageType.Name,
-			timestamp: tick(),
-		});
 	});
 
 	const [injected, injErr] = pcall(() => injectStopListener());
@@ -216,9 +192,7 @@ function startPlaytest(requestData: Record<string, unknown>) {
 			logConnection.Disconnect();
 			logConnection = undefined;
 		}
-		// Final backfill so stop_playtest and any post-play getPlaytestOutput call
-		// see the full playtest log even if the live MessageOut hookup didn't fire.
-		backfillFromHistory();
+		rebuildOutputFromHistory();
 		testRunning = false;
 
 		cleanupStopListener();
@@ -232,10 +206,7 @@ function startPlaytest(requestData: Record<string, unknown>) {
 
 function stopPlaytest(_requestData: Record<string, unknown>) {
 	if (testRunning) {
-		// Snapshot LogService history before signalling stop so the response
-		// already contains the playtest output even if the spawned task hasn't
-		// returned from ExecutePlayModeAsync yet.
-		backfillFromHistory();
+		rebuildOutputFromHistory();
 		warn(STOP_SIGNAL);
 		return {
 			success: true,
@@ -262,10 +233,8 @@ function stopPlaytest(_requestData: Record<string, unknown>) {
 }
 
 function getPlaytestOutput(_requestData: Record<string, unknown>) {
-	// Pull the latest LogService history into outputBuffer on every poll —
-	// MessageOut alone is unreliable across Studio's Edit↔Play DataModel swap.
 	if (testRunning) {
-		backfillFromHistory();
+		rebuildOutputFromHistory();
 	}
 	return {
 		isRunning: testRunning,

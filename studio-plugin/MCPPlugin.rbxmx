@@ -4725,31 +4725,19 @@ local testResult
 local testError
 local stopListenerScript
 local navResultCallback
--- Marker for the playtest's start time so backfillFromHistory can filter the
--- LogService history to entries produced during this playtest.
 local playtestStartedAt = 0
--- LogService.MessageOut connections established in Edit-mode plugin context
--- don't reliably fire for playtest server output in current Roblox builds — the
--- Studio DataModel swap on entering play orphans pre-play connections, leaving
--- `outputBuffer` empty even when the playtest writes plenty of output.
---
--- LogService.GetLogHistory(), in contrast, returns the unified output panel
--- history including playtest entries. Polling it on every getPlaytestOutput
--- call and on stop_playtest backfills anything MessageOut missed, while keeping
--- the live MessageOut hookup so non-broken Studio builds still see real-time
--- updates without doing the extra work.
-local function backfillFromHistory()
+-- MessageOut from the Edit-mode plugin context does not see playtest server
+-- output after the Studio DataModel swap, so we rebuild outputBuffer from
+-- LogService.GetLogHistory() on every poll. History is the single source of
+-- truth; the live MessageOut connection is kept only to route NAV results.
+local function rebuildOutputFromHistory()
 	local ok, history = pcall(function()
 		return game:GetService("LogService"):GetLogHistory()
 	end)
 	if not ok then
 		return nil
 	end
-	local seen = {}
-	for _, entry in outputBuffer do
-		local _arg0 = `{entry.timestamp}|{entry.message}`
-		seen[_arg0] = true
-	end
+	local entries = {}
 	for _, entry in history do
 		if entry.timestamp < playtestStartedAt then
 			continue
@@ -4766,22 +4754,14 @@ local function backfillFromHistory()
 		if string.sub(message, 1, _arg1_1) == `{NAV_RESULT}:` then
 			continue
 		end
-		local key = `{entry.timestamp}|{message}`
-		if seen[key] ~= nil then
-			continue
-		end
-		seen[key] = true
-		local _outputBuffer = outputBuffer
 		local _arg0 = {
 			message = message,
 			messageType = tostring(entry.messageType),
 			timestamp = entry.timestamp,
 		}
-		table.insert(_outputBuffer, _arg0)
+		table.insert(entries, _arg0)
 	end
-	table.sort(outputBuffer, function(a, b)
-		return a.timestamp < b.timestamp
-	end)
+	outputBuffer = entries
 end
 local function buildCommandListenerSource()
 	return `local LogService = game:GetService("LogService")\
@@ -4893,33 +4873,19 @@ local function startPlaytest(requestData)
 	testError = nil
 	playtestStartedAt = tick()
 	cleanupStopListener()
-	logConnection = LogService.MessageOut:Connect(function(message, messageType)
-		if message == STOP_SIGNAL then
-			return nil
-		end
+	logConnection = LogService.MessageOut:Connect(function(message)
 		local _message = message
-		local _arg1 = #NAV_SIGNAL
-		if string.sub(_message, 1, _arg1) == NAV_SIGNAL then
-			return nil
+		local _arg1 = #NAV_RESULT + 1
+		local _condition = string.sub(_message, 1, _arg1) == `{NAV_RESULT}:`
+		if _condition then
+			_condition = navResultCallback
 		end
-		local _message_1 = message
-		local _arg1_1 = #NAV_RESULT + 1
-		if string.sub(_message_1, 1, _arg1_1) == `{NAV_RESULT}:` then
-			if navResultCallback then
-				local _fn = navResultCallback
-				local _message_2 = message
-				local _arg0 = #NAV_RESULT + 2
-				_fn(string.sub(_message_2, _arg0))
-			end
-			return nil
+		if _condition then
+			local _fn = navResultCallback
+			local _message_1 = message
+			local _arg0 = #NAV_RESULT + 2
+			_fn(string.sub(_message_1, _arg0))
 		end
-		local _outputBuffer = outputBuffer
-		local _arg0 = {
-			message = message,
-			messageType = messageType.Name,
-			timestamp = tick(),
-		}
-		table.insert(_outputBuffer, _arg0)
 	end)
 	local injected, injErr = pcall(function()
 		return injectStopListener()
@@ -4947,9 +4913,7 @@ local function startPlaytest(requestData)
 			logConnection:Disconnect()
 			logConnection = nil
 		end
-		-- Final backfill so stop_playtest and any post-play getPlaytestOutput call
-		-- see the full playtest log even if the live MessageOut hookup didn't fire.
-		backfillFromHistory()
+		rebuildOutputFromHistory()
 		testRunning = false
 		cleanupStopListener()
 	end)
@@ -4961,10 +4925,7 @@ local function startPlaytest(requestData)
 end
 local function stopPlaytest(_requestData)
 	if testRunning then
-		-- Snapshot LogService history before signalling stop so the response
-		-- already contains the playtest output even if the spawned task hasn't
-		-- returned from ExecutePlayModeAsync yet.
-		backfillFromHistory()
+		rebuildOutputFromHistory()
 		warn(STOP_SIGNAL)
 		local _object = {
 			success = true,
@@ -4995,10 +4956,8 @@ local function stopPlaytest(_requestData)
 	}
 end
 local function getPlaytestOutput(_requestData)
-	-- Pull the latest LogService history into outputBuffer on every poll —
-	-- MessageOut alone is unreliable across Studio's Edit↔Play DataModel swap.
 	if testRunning then
-		backfillFromHistory()
+		rebuildOutputFromHistory()
 	end
 	local _object = {
 		isRunning = testRunning,
