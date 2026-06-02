@@ -245,6 +245,14 @@ function getPlaytestOutput(_requestData: Record<string, unknown>) {
 	};
 }
 
+// Must be called on the playtest server role; EndTest errors in Edit context.
+function endTest(_requestData: Record<string, unknown>) {
+	const target = StudioTestService as unknown as Instance & { EndTest(reason: string): void };
+	const [ok, err] = pcall(() => target.EndTest("stopped_by_mcp"));
+	if (ok) return { success: true };
+	return { error: tostring(err) };
+}
+
 function characterNavigation(requestData: Record<string, unknown>) {
 	if (!testRunning) {
 		return { error: "Playtest must be running. Start a playtest in 'play' mode first." };
@@ -294,6 +302,7 @@ function characterNavigation(requestData: Record<string, unknown>) {
 export = {
 	startPlaytest,
 	stopPlaytest,
+	endTest,
 	getPlaytestOutput,
 	characterNavigation,
 };

@@ -76,6 +76,7 @@ const routeMap: Record<string, Handler> = {
 
 	"/api/start-playtest": TestHandlers.startPlaytest,
 	"/api/stop-playtest": TestHandlers.stopPlaytest,
+	"/api/end-test": TestHandlers.endTest,
 	"/api/get-playtest-output": TestHandlers.getPlaytestOutput,
 	"/api/character-navigation": TestHandlers.characterNavigation,
 

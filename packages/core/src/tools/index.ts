@@ -679,6 +679,13 @@ export class RobloxStudioTools {
 
   async stopPlaytest() {
     const response = await this.client.request('/api/stop-playtest', {});
+    // EndTest can only run in the playtest server DataModel, so route a follow-up
+    // to the server role. If no playtest server is connected, skip silently.
+    try {
+      await this.client.request('/api/end-test', {}, 'server');
+    } catch {
+      // ignore: no server-role plugin connected, or already stopped
+    }
     return {
       content: [
         {
