@@ -662,12 +662,14 @@ export class RobloxStudioTools {
     if (mode !== 'play' && mode !== 'run') {
       throw new Error('mode must be "play" or "run"');
     }
-    this.bridge.resetPlaytest();
     const data: Record<string, unknown> = { mode };
     if (numPlayers !== undefined) {
       data.numPlayers = numPlayers;
     }
     const response = await this.client.request('/api/start-playtest', data);
+    if (response?.success) {
+      this.bridge.resetPlaytest();
+    }
     return {
       content: [
         {
