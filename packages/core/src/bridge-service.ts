@@ -20,11 +20,55 @@ interface PendingRequest {
 
 const STALE_INSTANCE_MS = 30000;
 
+export interface PlaytestOutputEntry {
+  message: string;
+  messageType: string;
+  timestamp: number;
+}
+
 export class BridgeService {
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private instances: Map<string, PluginInstance> = new Map();
   private nextClientIndex = 1;
   private requestTimeout = 30000;
+
+  private playtestActive = false;
+  private playtestBuffer: PlaytestOutputEntry[] = [];
+  private playtestStopRequested = false;
+
+  resetPlaytest() {
+    this.playtestBuffer = [];
+    this.playtestStopRequested = false;
+    this.playtestActive = true;
+  }
+
+  endPlaytest() {
+    this.playtestActive = false;
+    this.playtestStopRequested = false;
+  }
+
+  pushPlaytestOutput(entries: PlaytestOutputEntry[]) {
+    if (!this.playtestActive) return;
+    for (const entry of entries) {
+      this.playtestBuffer.push(entry);
+    }
+  }
+
+  getPlaytestBuffer(): PlaytestOutputEntry[] {
+    return [...this.playtestBuffer];
+  }
+
+  requestPlaytestStop() {
+    if (this.playtestActive) this.playtestStopRequested = true;
+  }
+
+  isPlaytestStopRequested(): boolean {
+    return this.playtestActive && this.playtestStopRequested;
+  }
+
+  isPlaytestActive(): boolean {
+    return this.playtestActive;
+  }
 
   registerInstance(instanceId: string, role: string): string {
     let assignedRole = role;

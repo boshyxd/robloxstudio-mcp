@@ -267,6 +267,28 @@ export function createHttpServer(tools: RobloxStudioTools, bridge: BridgeService
   });
 
 
+  app.post('/playtest/output', (req, res) => {
+    const entries = req.body?.entries;
+    if (!Array.isArray(entries)) {
+      res.status(400).json({ error: 'entries must be an array' });
+      return;
+    }
+    bridge.pushPlaytestOutput(entries);
+    res.json({ success: true });
+  });
+
+
+  app.get('/playtest/command', (req, res) => {
+    res.json({ stop: bridge.isPlaytestStopRequested() });
+  });
+
+
+  app.post('/playtest/end', (req, res) => {
+    bridge.endPlaytest();
+    res.json({ success: true });
+  });
+
+
   app.post('/proxy', async (req, res) => {
     const { endpoint, data, target, proxyInstanceId } = req.body;
 

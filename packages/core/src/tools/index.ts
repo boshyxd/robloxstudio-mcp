@@ -667,6 +667,9 @@ export class RobloxStudioTools {
       data.numPlayers = numPlayers;
     }
     const response = await this.client.request('/api/start-playtest', data);
+    if (response?.success) {
+      this.bridge.resetPlaytest();
+    }
     return {
       content: [
         {
@@ -678,24 +681,35 @@ export class RobloxStudioTools {
   }
 
   async stopPlaytest() {
-    const response = await this.client.request('/api/stop-playtest', {});
+    this.bridge.requestPlaytestStop();
+    const buffer = this.bridge.getPlaytestBuffer();
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(response)
+          text: JSON.stringify({
+            success: true,
+            isRunning: this.bridge.isPlaytestActive(),
+            output: buffer,
+            outputCount: buffer.length,
+            message: 'Stop requested; injected listener will call EndTest on its next poll.',
+          })
         }
       ]
     };
   }
 
-  async getPlaytestOutput(target?: string) {
-    const response = await this.client.request('/api/get-playtest-output', {}, target || 'edit');
+  async getPlaytestOutput(_target?: string) {
+    const buffer = this.bridge.getPlaytestBuffer();
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(response)
+          text: JSON.stringify({
+            isRunning: this.bridge.isPlaytestActive(),
+            output: buffer,
+            outputCount: buffer.length,
+          })
         }
       ]
     };

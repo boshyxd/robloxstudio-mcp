@@ -111,8 +111,6 @@ local routeMap = {
 	["/api/redo"] = MetadataHandlers.redo,
 	["/api/bulk-set-attributes"] = MetadataHandlers.bulkSetAttributes,
 	["/api/start-playtest"] = TestHandlers.startPlaytest,
-	["/api/stop-playtest"] = TestHandlers.stopPlaytest,
-	["/api/get-playtest-output"] = TestHandlers.getPlaytestOutput,
 	["/api/character-navigation"] = TestHandlers.characterNavigation,
 	["/api/export-build"] = BuildHandlers.exportBuild,
 	["/api/import-build"] = BuildHandlers.importBuild,
@@ -3002,6 +3000,7 @@ local _binding = Utils
 local getInstancePath = _binding.getInstancePath
 local getInstanceByPath = _binding.getInstanceByPath
 local readScriptSource = _binding.readScriptSource
+local forEachDescendant = _binding.forEachDescendant
 local function getFileTree(requestData)
 	local _condition = (requestData.path)
 	if _condition == nil then
@@ -3060,7 +3059,7 @@ local function searchFiles(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3087,11 +3086,7 @@ local function searchFiles(requestData)
 			end
 			table.insert(results, entry)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3167,7 +3162,7 @@ local function searchObjects(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local match = false
 		if searchType == "name" then
 			local _exp = string.lower(instance.Name)
@@ -3198,11 +3193,7 @@ local function searchObjects(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		results = results,
 		query = query,
@@ -3373,7 +3364,7 @@ local function searchByProperty(requestData)
 		}
 	end
 	local results = {}
-	local function searchRecursive(instance)
+	forEachDescendant(game, function(instance)
 		local success, value = pcall(function()
 			return tostring(instance[propertyName])
 		end)
@@ -3392,11 +3383,7 @@ local function searchByProperty(requestData)
 			}
 			table.insert(results, _arg0)
 		end
-		for _, child in instance:GetChildren() do
-			searchRecursive(child)
-		end
-	end
-	searchRecursive(game)
+	end)
 	return {
 		propertyName = propertyName,
 		propertyValue = propertyValue,
@@ -4723,31 +4710,82 @@ local TS = require(script.Parent.Parent.Parent.include.RuntimeLib)
 local _services = TS.import(script, script.Parent.Parent.Parent, "node_modules", "@rbxts", "services")
 local HttpService = _services.HttpService
 local LogService = _services.LogService
+local State = TS.import(script, script.Parent.Parent, "State")
 local StudioTestService = game:GetService("StudioTestService")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
-local STOP_SIGNAL = "__MCP_STOP__"
 local NAV_SIGNAL = "__MCP_NAV__"
 local NAV_RESULT = "__MCP_NAV_RESULT__"
 local testRunning = false
-local outputBuffer = {}
-local logConnection
+local editNavConnection
 local testResult
 local testError
 local stopListenerScript
 local navResultCallback
-local function buildCommandListenerSource()
+local function buildCommandListenerSource(baseUrl)
 	return `local LogService = game:GetService("LogService")\
 local StudioTestService = game:GetService("StudioTestService")\
 local PathfindingService = game:GetService("PathfindingService")\
 local Players = game:GetService("Players")\
 local HttpService = game:GetService("HttpService")\
+local BASE = "{baseUrl}"\
 local NAV_SIG = "{NAV_SIGNAL}"\
 local NAV_RES = "{NAV_RESULT}"\
+local OUTPUT_URL = BASE .. "/playtest/output"\
+local COMMAND_URL = BASE .. "/playtest/command"\
+\
+local pending = \{\}\
+LogService.MessageOut:Connect(function(msg, mt)\
+	if string.sub(msg, 1, #NAV_SIG) == NAV_SIG then return end\
+	if string.sub(msg, 1, #NAV_RES) == NAV_RES then return end\
+	table.insert(pending, \{\
+		message = msg,\
+		messageType = mt.Name,\
+		timestamp = tick(),\
+	\})\
+end)\
+\
+task.spawn(function()\
+	while true do\
+		task.wait(0.2)\
+		if #pending > 0 then\
+			local batch = pending\
+			pending = \{\}\
+			pcall(function()\
+				HttpService:RequestAsync(\{\
+					Url = OUTPUT_URL,\
+					Method = "POST",\
+					Headers = \{ ["Content-Type"] = "application/json" \},\
+					Body = HttpService:JSONEncode(\{ entries = batch \}),\
+				\})\
+			end)\
+		end\
+	end\
+end)\
+\
+task.spawn(function()\
+	while true do\
+		task.wait(0.5)\
+		local ok, response = pcall(function()\
+			return HttpService:RequestAsync(\{\
+				Url = COMMAND_URL,\
+				Method = "GET",\
+			\})\
+		end)\
+		if ok and response.Success and response.Body then\
+			local parsed\
+			local decodeOk\
+			decodeOk, parsed = pcall(function() return HttpService:JSONDecode(response.Body) end)\
+			if decodeOk and parsed and parsed.stop then\
+				pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)\
+				return\
+			end\
+		end\
+	end\
+end)\
+\
 LogService.MessageOut:Connect(function(msg)\
-	if msg == "{STOP_SIGNAL}" then\
-		pcall(function() StudioTestService:EndTest("stopped_by_mcp") end)\
-	elseif string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then\
+	if string.sub(msg, 1, #NAV_SIG + 1) == NAV_SIG .. ":" then\
 		local json = string.sub(msg, #NAV_SIG + 2)\
 		task.spawn(function()\
 			local ok, d = pcall(function() return HttpService:JSONDecode(json) end)\
@@ -4804,11 +4842,11 @@ LogService.MessageOut:Connect(function(msg)\
 	end\
 end)`
 end
-local function injectStopListener()
+local function injectStopListener(baseUrl)
 	local listener = Instance.new("Script")
 	listener.Name = "__MCP_CommandListener"
 	listener.Parent = ServerScriptService
-	local source = buildCommandListenerSource()
+	local source = buildCommandListenerSource(baseUrl)
 	local seOk = pcall(function()
 		ScriptEditorService:UpdateSourceAsync(listener, function()
 			return source
@@ -4827,6 +4865,18 @@ local function cleanupStopListener()
 		stopListenerScript = nil
 	end
 end
+local function notifyPlaytestEnded(baseUrl)
+	pcall(function()
+		HttpService:RequestAsync({
+			Url = `{baseUrl}/playtest/end`,
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json",
+			},
+			Body = "{}",
+		})
+	end)
+end
 local function startPlaytest(requestData)
 	local mode = requestData.mode
 	local numPlayers = requestData.numPlayers
@@ -4840,44 +4890,31 @@ local function startPlaytest(requestData)
 			error = "A test is already running",
 		}
 	end
+	local conn = State.getActiveConnection()
+	local baseUrl = conn.serverUrl
 	testRunning = true
-	outputBuffer = {}
 	testResult = nil
 	testError = nil
 	cleanupStopListener()
-	logConnection = LogService.MessageOut:Connect(function(message, messageType)
-		if message == STOP_SIGNAL then
-			return nil
-		end
+	editNavConnection = LogService.MessageOut:Connect(function(message)
 		local _message = message
-		local _arg1 = #NAV_SIGNAL
-		if string.sub(_message, 1, _arg1) == NAV_SIGNAL then
-			return nil
+		local _arg1 = #NAV_RESULT + 1
+		local _condition = string.sub(_message, 1, _arg1) == `{NAV_RESULT}:`
+		if _condition then
+			_condition = navResultCallback
 		end
-		local _message_1 = message
-		local _arg1_1 = #NAV_RESULT + 1
-		if string.sub(_message_1, 1, _arg1_1) == `{NAV_RESULT}:` then
-			if navResultCallback then
-				local _fn = navResultCallback
-				local _message_2 = message
-				local _arg0 = #NAV_RESULT + 2
-				_fn(string.sub(_message_2, _arg0))
-			end
-			return nil
+		if _condition then
+			local _fn = navResultCallback
+			local _message_1 = message
+			local _arg0 = #NAV_RESULT + 2
+			_fn(string.sub(_message_1, _arg0))
 		end
-		local _outputBuffer = outputBuffer
-		local _arg0 = {
-			message = message,
-			messageType = messageType.Name,
-			timestamp = tick(),
-		}
-		table.insert(_outputBuffer, _arg0)
 	end)
 	local injected, injErr = pcall(function()
-		return injectStopListener()
+		return injectStopListener(baseUrl)
 	end)
 	if not injected then
-		warn(`[MCP] Failed to inject stop listener: {injErr}`)
+		warn(`[MCP] Failed to inject playtest listener: {injErr}`)
 	end
 	if numPlayers ~= nil and mode == "run" then
 		local TestService = game:GetService("TestService")
@@ -4895,11 +4932,12 @@ local function startPlaytest(requestData)
 		else
 			testError = tostring(result)
 		end
-		if logConnection then
-			logConnection:Disconnect()
-			logConnection = nil
+		if editNavConnection then
+			editNavConnection:Disconnect()
+			editNavConnection = nil
 		end
 		testRunning = false
+		notifyPlaytestEnded(baseUrl)
 		cleanupStopListener()
 	end)
 	local msg = if numPlayers ~= nil then `Playtest started in {mode} mode with {numPlayers} player(s)` else `Playtest started in {mode} mode`
@@ -4907,51 +4945,6 @@ local function startPlaytest(requestData)
 		success = true,
 		message = msg,
 	}
-end
-local function stopPlaytest(_requestData)
-	if testRunning then
-		warn(STOP_SIGNAL)
-		local _object = {
-			success = true,
-		}
-		local _left = "output"
-		local _array = {}
-		local _length = #_array
-		table.move(outputBuffer, 1, #outputBuffer, _length + 1, _array)
-		_object[_left] = _array
-		_object.outputCount = #outputBuffer
-		_object.message = "Playtest stop signal sent."
-		return _object
-	end
-	local endTest = StudioTestService
-	local endOk = pcall(function()
-		endTest:EndTest("stopped_by_mcp")
-	end)
-	if endOk then
-		return {
-			success = true,
-			output = {},
-			outputCount = 0,
-			message = "Playtest stopped via StudioTestService.",
-		}
-	end
-	return {
-		error = "No MCP-started test is running and direct stop failed. The playtest may have been started manually.",
-	}
-end
-local function getPlaytestOutput(_requestData)
-	local _object = {
-		isRunning = testRunning,
-	}
-	local _left = "output"
-	local _array = {}
-	local _length = #_array
-	table.move(outputBuffer, 1, #outputBuffer, _length + 1, _array)
-	_object[_left] = _array
-	_object.outputCount = #outputBuffer
-	_object.testResult = if testResult ~= nil then tostring(testResult) else nil
-	_object.testError = testError
-	return _object
 end
 local function characterNavigation(requestData)
 	if not testRunning then
@@ -5022,8 +5015,6 @@ local function characterNavigation(requestData)
 end
 return {
 	startPlaytest = startPlaytest,
-	stopPlaytest = stopPlaytest,
-	getPlaytestOutput = getPlaytestOutput,
 	characterNavigation = characterNavigation,
 }
 ]]></string>
@@ -6344,6 +6335,12 @@ local function evaluateFormula(formula, variables, instance, index)
 		return index, "Complex formulas not supported - using index value"
 	end
 end
+local function forEachDescendant(root, visit)
+	visit(root)
+	for _, child in root:GetChildren() do
+		forEachDescendant(child, visit)
+	end
+end
 local function compareVersions(v1, v2)
 	local function parseVersion(v)
 		local parts = {}
@@ -6401,6 +6398,7 @@ return {
 	convertPropertyValue = convertPropertyValue,
 	evaluateFormula = evaluateFormula,
 	compareVersions = compareVersions,
+	forEachDescendant = forEachDescendant,
 }
 ]]></string>
         </Properties>

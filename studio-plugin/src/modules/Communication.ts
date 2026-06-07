@@ -75,8 +75,6 @@ const routeMap: Record<string, Handler> = {
 	"/api/bulk-set-attributes": MetadataHandlers.bulkSetAttributes,
 
 	"/api/start-playtest": TestHandlers.startPlaytest,
-	"/api/stop-playtest": TestHandlers.stopPlaytest,
-	"/api/get-playtest-output": TestHandlers.getPlaytestOutput,
 	"/api/character-navigation": TestHandlers.characterNavigation,
 
 	"/api/export-build": BuildHandlers.exportBuild,
