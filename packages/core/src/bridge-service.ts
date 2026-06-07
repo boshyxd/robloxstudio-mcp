@@ -13,6 +13,7 @@ interface PendingRequest {
   data: any;
   target: string;
   timestamp: number;
+  dispatchedAt?: number;
   resolve: (value: any) => void;
   reject: (error: any) => void;
   timeoutId: ReturnType<typeof setTimeout>;
@@ -25,6 +26,12 @@ export class BridgeService {
   private instances: Map<string, PluginInstance> = new Map();
   private nextClientIndex = 1;
   private requestTimeout = 30000;
+  // Once a request has been handed to a poller it is "in flight" and is not
+  // offered to other polls until this TTL elapses. The TTL lets a request that
+  // never got a response (dropped /response, plugin restart) be re-dispatched
+  // before it hits the full request timeout, while preventing the same request
+  // from being executed many times by successive fast polls.
+  private redispatchTimeout = 10000;
 
   registerInstance(instanceId: string, role: string): string {
     let assignedRole = role;
@@ -110,16 +117,30 @@ export class BridgeService {
 
   getPendingRequest(callerRole = 'edit'): { requestId: string; request: { endpoint: string; data: any } } | null {
 
-    let oldestRequest: PendingRequest | null = null;
+    const now = Date.now();
+    let oldestUndispatched: PendingRequest | null = null;
+    let oldestExpired: PendingRequest | null = null;
 
     for (const request of this.pendingRequests.values()) {
       if (request.target !== callerRole) continue;
-      if (!oldestRequest || request.timestamp < oldestRequest.timestamp) {
-        oldestRequest = request;
+
+      if (request.dispatchedAt === undefined) {
+        // Fresh, never-dispatched work — always preferred.
+        if (!oldestUndispatched || request.timestamp < oldestUndispatched.timestamp) {
+          oldestUndispatched = request;
+        }
+      } else if (now - request.dispatchedAt >= this.redispatchTimeout) {
+        // In-flight but unanswered past the TTL — eligible only as a fallback so
+        // a stalled re-offer cannot leapfrog newer undispatched work.
+        if (!oldestExpired || request.timestamp < oldestExpired.timestamp) {
+          oldestExpired = request;
+        }
       }
     }
 
+    const oldestRequest = oldestUndispatched ?? oldestExpired;
     if (oldestRequest) {
+      oldestRequest.dispatchedAt = now;
       return {
         requestId: oldestRequest.id,
         request: {

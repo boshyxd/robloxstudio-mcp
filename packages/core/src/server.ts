@@ -7,7 +7,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import http from 'http';
-import { createHttpServer, listenWithRetry, TOOL_HANDLERS } from './http-server.js';
+import { createHttpServer, listenWithRetry, isPortInUseError, TOOL_HANDLERS } from './http-server.js';
 import { RobloxStudioTools } from './tools/index.js';
 import { BridgeService } from './bridge-service.js';
 import { ProxyBridgeService } from './proxy-bridge-service.js';
@@ -94,20 +94,32 @@ export class RobloxStudioMCPServer {
     // Try to bind as primary
     try {
       primaryApp = createHttpServer(this.tools, this.bridge, this.allowedToolNames, this.config);
-      const result = await listenWithRetry(primaryApp, host, basePort, 5);
+      // Only the base port is a valid primary: the Studio plugin polls that one
+      // port. If it is already taken (another agent owns the bridge) we must not
+      // bind a second primary on 58742+ that no plugin will ever poll — fall
+      // through to proxy mode instead so every agent shares the one bridge.
+      const result = await listenWithRetry(primaryApp, host, basePort, 1);
       httpHandle = result.server;
       boundPort = result.port;
       console.error(`HTTP server listening on ${host}:${boundPort} for Studio plugin (primary mode)`);
       console.error(`Streamable HTTP MCP endpoint: http://localhost:${boundPort}/mcp`);
     } catch (err) {
-      // All ports in use — fall back to proxy mode
+      if (!isPortInUseError(err)) {
+        // A real bind failure (permissions, bad host, ...) — surface it instead
+        // of silently entering proxy mode and forwarding to a primary the base
+        // port never actually accepted.
+        console.error(`Fatal: could not bind primary HTTP server: ${(err as Error).message}`);
+        throw err;
+      }
+      // Base port already owned by another agent — share its bridge via proxy
+      // mode instead of binding a second primary the plugin would never poll.
       console.error(`Could not bind primary HTTP server: ${(err as Error).message}`);
       bridgeMode = 'proxy';
       primaryApp = undefined;
       const proxyBridge = new ProxyBridgeService(`http://localhost:${basePort}`);
       this.bridge = proxyBridge;
       this.tools = new RobloxStudioTools(this.bridge);
-      console.error(`All ports ${basePort}-${basePort + 4} in use — entering proxy mode (forwarding to localhost:${basePort})`);
+      console.error(`Port ${basePort} already in use — entering proxy mode (forwarding to the primary on localhost:${basePort})`);
 
       // Periodically try to promote to primary if the port frees up
       const promotionIntervalMs = parseInt(process.env.ROBLOX_STUDIO_PROXY_PROMOTION_INTERVAL_MS || '5000');
@@ -116,7 +128,7 @@ export class RobloxStudioMCPServer {
           this.bridge = new BridgeService();
           this.tools = new RobloxStudioTools(this.bridge);
           primaryApp = createHttpServer(this.tools, this.bridge, this.allowedToolNames, this.config);
-          const result = await listenWithRetry(primaryApp, host, basePort, 5);
+          const result = await listenWithRetry(primaryApp, host, basePort, 1);
           httpHandle = result.server;
           boundPort = result.port;
           bridgeMode = 'primary';

@@ -740,7 +740,7 @@ export class RobloxStudioTools {
 
   private static findProjectRoot(startDir: string): string | null {
     let dir = path.resolve(startDir);
-    while (true) {
+    for (;;) {
       if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'package.json'))) {
         return dir;
       }

@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { createHttpServer } from '../http-server.js';
+import { createHttpServer, isPortInUseError } from '../http-server.js';
 import { RobloxStudioTools } from '../tools/index.js';
 import { BridgeService } from '../bridge-service.js';
 import { Application } from 'express';
@@ -215,7 +215,36 @@ describe('HTTP Server', () => {
         mcpServerActive: true
       });
       expect(response.body.lastMCPActivity).toBeGreaterThan(0);
-      expect(response.body.uptime).toBeGreaterThan(0);
+      // uptime is Date.now() - startTime, which is legitimately 0 when measured
+      // in the same millisecond as activation. Non-negative is the real invariant.
+      expect(response.body.uptime).toBeGreaterThanOrEqual(0);
     });
+  });
+});
+
+describe('isPortInUseError', () => {
+  test('true when the error carries the EADDRINUSE code', () => {
+    const err = Object.assign(new Error('listen EADDRINUSE: address already in use'), { code: 'EADDRINUSE' });
+    expect(isPortInUseError(err)).toBe(true);
+  });
+
+  test('true for the aggregate "all ports in use" error from listenWithRetry', () => {
+    expect(isPortInUseError(new Error('All ports 58741-58741 are in use. Stop some MCP server instances and retry.'))).toBe(true);
+  });
+
+  test('false for a non-port bind error (e.g. EACCES) so proxy mode does not mask it', () => {
+    const err = Object.assign(new Error('listen EACCES: permission denied'), { code: 'EACCES' });
+    expect(isPortInUseError(err)).toBe(false);
+  });
+
+  test('false for undefined', () => {
+    expect(isPortInUseError(undefined)).toBe(false);
+  });
+
+  test('false for an unrelated error whose message merely contains "in use"', () => {
+    // The message fallback must be anchored to listenWithRetry's aggregate
+    // phrasing, not any "in use" substring — otherwise it re-introduces the very
+    // masking the helper exists to prevent.
+    expect(isPortInUseError(new Error('GPU resource currently in use'))).toBe(false);
   });
 });

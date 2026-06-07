@@ -5,6 +5,8 @@ export interface Connection {
 	serverUrl: string;
 	isActive: boolean;
 	pollInterval: number;
+	maxIdlePollInterval: number;
+	currentPollInterval: number;
 	lastPoll: number;
 	consecutiveFailures: number;
 	maxFailuresBeforeError: number;

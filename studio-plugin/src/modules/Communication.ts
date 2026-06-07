@@ -107,14 +107,67 @@ function processRequest(request: RequestPayload): unknown {
 }
 
 function sendResponse(conn: Connection, requestId: string, responseData: unknown) {
-	pcall(() => {
-		HttpService.RequestAsync({
-			Url: `${conn.serverUrl}/response`,
-			Method: "POST",
-			Headers: { "Content-Type": "application/json" },
-			Body: HttpService.JSONEncode({ requestId, response: responseData }),
+	const body = HttpService.JSONEncode({ requestId, response: responseData });
+	const maxAttempts = 3;
+
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		const [ok, result] = pcall(() => {
+			return HttpService.RequestAsync({
+				Url: `${conn.serverUrl}/response`,
+				Method: "POST",
+				Headers: { "Content-Type": "application/json" },
+				Body: body,
+			});
 		});
-	});
+
+		if (ok && result.Success) return;
+
+		if (attempt < maxAttempts) {
+			task.wait(0.2 * attempt);
+		} else {
+			// Don't let a dropped response vanish silently into a 30s server-side
+			// timeout — make it visible in the Output window.
+			const reason = ok ? `HTTP ${result.StatusCode}` : tostring(result);
+			warn(`[robloxstudio-mcp] failed to deliver response for request ${requestId} after ${maxAttempts} attempts: ${reason}`);
+		}
+	}
+}
+
+interface HandledRequest {
+	status: "processing" | "done";
+	response?: unknown;
+}
+
+// Dedupe by requestId so a request the server re-dispatches (because a /response
+// was lost or it crossed the redispatch TTL while still running) is never
+// executed twice. While "processing" we ignore repeats; once "done" we re-send
+// the cached response instead of re-running the handler.
+const handledRequests = new Map<string, HandledRequest>();
+const handledOrder: string[] = [];
+const MAX_HANDLED_REQUESTS = 128;
+
+function rememberHandledRequest(requestId: string, entry: HandledRequest) {
+	const isNew = !handledRequests.has(requestId);
+	handledRequests.set(requestId, entry);
+	if (!isNew) return;
+
+	handledOrder.push(requestId);
+	if (handledOrder.size() <= MAX_HANDLED_REQUESTS) return;
+
+	// Over capacity: evict the oldest *completed* entry only. Never drop an
+	// in-flight ("processing") id — the server may still re-dispatch it, and
+	// losing the record here would let the handler run a second time. If the
+	// whole window is still processing (pathological), allow a brief overflow
+	// rather than risk a duplicate execution.
+	for (let i = 0; i < handledOrder.size(); i++) {
+		const id = handledOrder[i];
+		const existing = handledRequests.get(id);
+		if (!existing || existing.status === "done") {
+			handledOrder.remove(i);
+			handledRequests.delete(id);
+			break;
+		}
+	}
 }
 
 function getConnectionStatus(connIndex: number): string {
@@ -196,15 +249,35 @@ function pollForRequests(connIndex: number) {
 			}
 		}
 
-		if (data.request && mcpConnected) {
-			task.spawn(() => {
-				const [ok, response] = pcall(() => processRequest(data.request!));
-				if (ok) {
-					sendResponse(conn, data.requestId!, response);
-				} else {
-					sendResponse(conn, data.requestId!, { error: tostring(response) });
+		if (data.request && mcpConnected && data.requestId !== undefined) {
+			const requestId = data.requestId;
+			const existing = handledRequests.get(requestId);
+			if (existing) {
+				// Already seen this request id. If it finished, re-send the cached
+				// result (the server only re-offers a request when it never got the
+				// response). If it is still processing, the in-flight handler will
+				// post the response — do nothing. Spawn so retry waits never block
+				// the poll loop.
+				if (existing.status === "done") {
+					task.spawn(() => sendResponse(conn, requestId, existing.response));
 				}
-			});
+			} else {
+				rememberHandledRequest(requestId, { status: "processing" });
+				task.spawn(() => {
+					const [ok, response] = pcall(() => processRequest(data.request!));
+					const finalResponse = ok ? response : { error: tostring(response) };
+					rememberHandledRequest(requestId, { status: "done", response: finalResponse });
+					sendResponse(conn, requestId, finalResponse);
+				});
+			}
+		}
+
+		// Adaptive poll cadence: poll quickly while work is flowing, back off when
+		// idle so steady-state HTTP volume stays well under Roblox's rate limit.
+		if (data.request) {
+			conn.currentPollInterval = conn.pollInterval;
+		} else {
+			conn.currentPollInterval = math.min(conn.currentPollInterval * 1.5, conn.maxIdlePollInterval);
 		}
 	} else if (conn.isActive) {
 		conn.consecutiveFailures++;
@@ -287,6 +360,7 @@ function activatePlugin(connIndex?: number) {
 	conn.isActive = true;
 	conn.consecutiveFailures = 0;
 	conn.currentRetryDelay = 0.5;
+	conn.currentPollInterval = conn.pollInterval;
 	ui.screenGui.Enabled = true;
 
 	if (idx === State.getActiveTabIndex()) {
@@ -302,7 +376,7 @@ function activatePlugin(connIndex?: number) {
 		if (!conn.heartbeatConnection) {
 			conn.heartbeatConnection = RunService.Heartbeat.Connect(() => {
 				const now = tick();
-				const currentInterval = conn.consecutiveFailures > 5 ? conn.currentRetryDelay : conn.pollInterval;
+				const currentInterval = conn.consecutiveFailures > 5 ? conn.currentRetryDelay : conn.currentPollInterval;
 				if (now - conn.lastPoll > currentInterval) {
 					conn.lastPoll = now;
 					pollForRequests(idx);
